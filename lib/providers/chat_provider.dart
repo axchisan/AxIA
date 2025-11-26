@@ -1,10 +1,22 @@
 import 'package:flutter/foundation.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:convert';
 import '../models/chat_message.dart';
+import '../config/api_config.dart';
+import '../services/auth_service.dart';
 
 class ChatProvider extends ChangeNotifier {
   List<ChatMessage> _messages = [];
+  WebSocketChannel? _channel;
+  bool _isConnected = false;
+  bool _isLoading = false;
+  String? _error;
+  String? _currentSessionId;
 
   List<ChatMessage> get messages => _messages;
+  bool get isConnected => _isConnected;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
 
   ChatProvider() {
     _loadMockData();
@@ -34,12 +46,85 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> initializeWebSocket() async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final authService = AuthService();
+      final token = await authService.getToken();
+      final currentUser = await authService.getCurrentUser();
+
+      if (token == null || currentUser == null) {
+        _error = 'Authentication required';
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      // Construct WebSocket URL with authentication
+      final wsUrl = '${ApiConfig.wsUrl}/$currentUser?token=$token';
+
+      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+
+      // Listen to incoming messages
+      _channel!.stream.listen(
+        (message) {
+          _handleIncomingMessage(message);
+        },
+        onError: (error) {
+          _error = 'WebSocket error: $error';
+          _isConnected = false;
+          notifyListeners();
+        },
+        onDone: () {
+          _isConnected = false;
+          notifyListeners();
+        },
+      );
+
+      _isConnected = true;
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _error = 'Failed to connect: $e';
+      _isConnected = false;
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void _handleIncomingMessage(dynamic message) {
+    try {
+      final data = jsonDecode(message);
+      final axiaMessage = ChatMessage(
+        id: data['session_id'] ?? DateTime.now().toString(),
+        content: data['output'] ?? '',
+        sender: MessageSender.axia,
+        timestamp: DateTime.now(),
+        isVoice: data['type'] == 'audio',
+      );
+
+      _messages.add(axiaMessage);
+      notifyListeners();
+    } catch (e) {
+      print('Error parsing message: $e');
+    }
+  }
+
   void addMessage(ChatMessage message) {
     _messages.add(message);
     notifyListeners();
   }
 
   void sendMessage(String content) {
+    if (!_isConnected || _channel == null) {
+      _error = 'WebSocket not connected';
+      notifyListeners();
+      return;
+    }
+
     final userMessage = ChatMessage(
       id: DateTime.now().toString(),
       content: content,
@@ -47,31 +132,72 @@ class ChatProvider extends ChangeNotifier {
       timestamp: DateTime.now(),
     );
     _messages.add(userMessage);
-    
-    // Simular respuesta de AxIA después de un pequeño delay
-    Future.delayed(const Duration(milliseconds: 800), () {
-      final axiaMessage = ChatMessage(
-        id: DateTime.now().toString(),
-        content: _generateAxiaResponse(content),
-        sender: MessageSender.axia,
-        timestamp: DateTime.now(),
-      );
-      _messages.add(axiaMessage);
-      notifyListeners();
+    _currentSessionId = DateTime.now().toString();
+
+    // Send through WebSocket
+    final payload = jsonEncode({
+      'type': 'text',
+      'text': content,
+      'session_id': _currentSessionId,
+      'timestamp': DateTime.now().toIso8601String(),
     });
+
+    try {
+      _channel!.sink.add(payload);
+    } catch (e) {
+      _error = 'Failed to send message: $e';
+    }
 
     notifyListeners();
   }
 
-  String _generateAxiaResponse(String userMessage) {
-    // Respuestas simuladas inteligentes
-    final responses = [
-      'Entendido, lo anotaré para más tarde.',
-      'Perfecto, ya está registrado en tu agenda.',
-      'Claro, déjamelo a mí. Te lo recordaré.',
-      'Listo boss, todo controlado.',
-      '✓ Anotado. ¿Algo más que necesites?',
-    ];
-    return responses[userMessage.hashCode % responses.length];
+  Future<void> sendAudioMessage(String audioBase64) async {
+    if (!_isConnected || _channel == null) {
+      _error = 'WebSocket not connected';
+      notifyListeners();
+      return;
+    }
+
+    final userMessage = ChatMessage(
+      id: DateTime.now().toString(),
+      content: '[Audio enviado]',
+      sender: MessageSender.user,
+      timestamp: DateTime.now(),
+      isVoice: true,
+    );
+    _messages.add(userMessage);
+
+    final payload = jsonEncode({
+      'type': 'audio',
+      'audio_base64': audioBase64,
+      'session_id': DateTime.now().toString(),
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+
+    try {
+      _channel!.sink.add(payload);
+    } catch (e) {
+      _error = 'Failed to send audio: $e';
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> reconnect() async {
+    close();
+    await Future.delayed(const Duration(seconds: 1));
+    await initializeWebSocket();
+  }
+
+  void close() {
+    _channel?.sink.close();
+    _isConnected = false;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    close();
+    super.dispose();
   }
 }

@@ -21,13 +21,15 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ChatProvider>().initializeWebSocket();
+    });
+
     _dotAnimations = List.generate(3, (index) {
       final controller = AnimationController(
         duration: const Duration(milliseconds: 600),
         vsync: this,
       );
-      // ignore: unused_local_variable
-      final delay = (index * 100);
       controller.repeat(
         min: 0.0,
         max: 1.0,
@@ -51,51 +53,87 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          Expanded(
-            child: Consumer<ChatProvider>(
-              builder: (context, chatProvider, _) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_scrollController.hasClients) {
-                    _scrollController.jumpTo(
-                      _scrollController.position.maxScrollExtent,
-                    );
-                  }
-                });
-
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 20,
-                  ),
-                  itemCount: chatProvider.messages.length + (_isTyping ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index == chatProvider.messages.length && _isTyping) {
-                      return _buildTypingIndicator();
-                    }
-
-                    final message = chatProvider.messages[index];
-                    final isUserMessage = message.sender.name == 'user';
-
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Align(
-                        alignment: isUserMessage
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: _buildMessageBubble(message, isUserMessage),
+      body: Consumer<ChatProvider>(
+        builder: (context, chatProvider, _) {
+          if (chatProvider.error != null) {
+            return Column(
+              children: [
+                Container(
+                  color: Colors.red.withOpacity(0.1),
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          chatProvider.error!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
                       ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          _buildInputArea(),
-        ],
+                      TextButton(
+                        onPressed: () => chatProvider.reconnect(),
+                        child: const Text('Reconectar'),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(child: _buildChatBody(chatProvider)),
+              ],
+            );
+          }
+
+          return _buildChatBody(chatProvider);
+        },
       ),
+    );
+  }
+
+  Widget _buildChatBody(ChatProvider chatProvider) {
+    return Column(
+      children: [
+        Expanded(
+          child: Consumer<ChatProvider>(
+            builder: (context, chatProvider, _) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_scrollController.hasClients) {
+                  _scrollController.jumpTo(
+                    _scrollController.position.maxScrollExtent,
+                  );
+                }
+              });
+
+              return ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
+                itemCount: chatProvider.messages.length + (_isTyping ? 1 : 0),
+                itemBuilder: (context, index) {
+                  if (index == chatProvider.messages.length && _isTyping) {
+                    return _buildTypingIndicator();
+                  }
+
+                  final message = chatProvider.messages[index];
+                  final isUserMessage = message.sender.name == 'user';
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Align(
+                      alignment: isUserMessage
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: _buildMessageBubble(message, isUserMessage),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        _buildInputArea(chatProvider),
+      ],
     );
   }
 
@@ -125,11 +163,17 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              Text(
-                'Activa • En línea',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.statusAvailable,
-                ),
+              Consumer<ChatProvider>(
+                builder: (context, chatProvider, _) {
+                  return Text(
+                    chatProvider.isConnected ? 'Activa • En línea' : 'Conectando...',
+                    style: AppTypography.caption.copyWith(
+                      color: chatProvider.isConnected
+                          ? AppColors.statusAvailable
+                          : Colors.orange,
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -278,7 +322,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildInputArea() {
+  Widget _buildInputArea(ChatProvider chatProvider) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.bgDarkSecondary,
@@ -346,24 +390,27 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
           ),
           const SizedBox(width: 12),
           GestureDetector(
-            onTap: () {
-              if (_messageController.text.isNotEmpty) {
-                context.read<ChatProvider>().sendMessage(
-                      _messageController.text,
-                    );
-                _messageController.clear();
-                setState(() => _isTyping = false);
-              }
-            },
+            onTap: chatProvider.isConnected && _messageController.text.isNotEmpty
+                ? () {
+                    chatProvider.sendMessage(_messageController.text);
+                    _messageController.clear();
+                    setState(() => _isTyping = false);
+                  }
+                : null,
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: AppColors.neonGradient,
+                  colors: chatProvider.isConnected
+                      ? AppColors.neonGradient
+                      : [Colors.grey, Colors.grey],
                 ),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.send_rounded, color: Colors.white),
+              child: Icon(
+                Icons.send_rounded,
+                color: chatProvider.isConnected ? Colors.white : Colors.grey,
+              ),
             ),
           ),
         ],
@@ -432,8 +479,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   }
 
   void _sendVoiceMessage() {
-    final voiceMessage = '🎤 Mensaje de voz (simulado)';
-    context.read<ChatProvider>().sendMessage(voiceMessage);
+    context.read<ChatProvider>().sendMessage('🎤 Mensaje de voz (simulado)');
   }
 
   void _showMessageOptions(dynamic message) {

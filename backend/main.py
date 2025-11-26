@@ -12,6 +12,12 @@ import uuid
 from pydantic import BaseModel
 import aiohttp
 import logging
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from database import get_db, init_db, engine
+from models import User, UserCreate, UserResponse, UserLogin
+from security import hash_password, verify_password
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,12 +32,16 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL")
 if not N8N_WEBHOOK_URL:
     raise RuntimeError("N8N_WEBHOOK_URL environment variable is required")
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is required")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days
 
 app = FastAPI(
     title="AxIA API",
-    description="Backend para la app AxIA - Asistente IA personal",
+    description="Backend para la app AxIA - Asistente Unificado",
     version="1.0.0"
 )
 
@@ -44,11 +54,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage (replace with PostgreSQL for production)
-users_db: Dict = {}
+# In-memory storage for sessions and messages
 sessions_db: Dict = {}
 messages_db: Dict[str, List] = {}
 active_connections: Dict[str, List] = {}
+
+@app.on_event("startup")
+async def startup():
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda conn: None)  # Test connection
+        logger.info("Database connection successful")
+    except Exception as e:
+        logger.error(f"Database connection failed: {str(e)}")
+        raise
 
 # Models
 class TokenResponse(BaseModel):
@@ -110,26 +129,69 @@ async def get_current_user(
 
 # Routes
 @app.post("/token", response_model=TokenResponse)
-async def login(username: str, password: str):
-    if username == "duvan" and password == "password123":
-        access_token = create_access_token(data={"sub": username})
-        expires_in = ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        
-        users_db[username] = {
-            "username": username,
-            "created_at": datetime.utcnow().isoformat()
-        }
-        
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "expires_in": expires_in
-        }
+async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
+    """
+    Authenticate user against PostgreSQL database and return JWT token.
+    """
+    # Query user from database
+    result = await db.execute(
+        select(User).where(User.username == credentials.username)
+    )
+    user = result.scalar_one_or_none()
     
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+    # Validate user exists and password is correct
+    if not user or not verify_password(credentials.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is disabled")
+    
+    # Create JWT token
+    access_token = create_access_token(data={"sub": user.username})
+    expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": int(expires_delta.total_seconds())
+    }
+
+@app.post("/register", response_model=UserResponse)
+async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+    """
+    Register a new user in the system.
+    """
+    # Check if user already exists
+    result = await db.execute(
+        select(User).where(
+            (User.username == user_data.username) | (User.email == user_data.email)
+        )
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Username or email already registered")
+    
+    # Create new user
+    hashed_pwd = hash_password(user_data.password)
+    new_user = User(
+        username=user_data.username,
+        email=user_data.email,
+        full_name=user_data.full_name,
+        hashed_password=hashed_pwd
+    )
+    
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    
+    return new_user
 
 @app.post("/send-message")
-async def send_message(request: MessageRequest, current_user: str = Depends(get_current_user)):
+async def send_message(
+    request: MessageRequest,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Send message to AxIA (text or audio)."""
     session_id = str(uuid.uuid4())
     
     payload = {
@@ -177,7 +239,7 @@ async def send_message(request: MessageRequest, current_user: str = Depends(get_
 
 @app.websocket("/ws/{username}")
 async def websocket_endpoint(websocket: WebSocket, username: str, token: str = None):
-    # Validar token en WebSocket (viene como query parameter: ?token=xxx)
+    """WebSocket for real-time chat."""
     if not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -231,12 +293,16 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
         if websocket in active_connections.get(username, []):
             active_connections[username].remove(websocket)
 
-# Resto de rutas (sin cambios, solo con autenticación correcta)
 @app.get("/calendar/events")
-async def get_calendar_events(current_user: str = Depends(get_current_user)) -> List[CalendarEvent]:
+async def get_calendar_events(
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> List[CalendarEvent]:
+    """Get user's calendar events."""
     return [
         CalendarEvent(
-            id="1", title="Reunión con cliente",
+            id="1",
+            title="Reunión con cliente",
             start_time=(datetime.utcnow() + timedelta(days=1)).isoformat(),
             end_time=(datetime.utcnow() + timedelta(days=1, hours=1)).isoformat(),
             description="Discutir propuesta"
@@ -244,23 +310,38 @@ async def get_calendar_events(current_user: str = Depends(get_current_user)) -> 
     ]
 
 @app.get("/tasks")
-async def get_tasks(current_user: str = Depends(get_current_user)) -> List[Task]:
+async def get_tasks(
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> List[Task]:
+    """Get user's tasks."""
     return [
         Task(id="1", title="Completar documentación", completed=False),
         Task(id="2", title="Revisar código", completed=True),
     ]
 
 @app.post("/tasks")
-async def create_task(task: Task, current_user: str = Depends(get_current_user)) -> Task:
+async def create_task(
+    task: Task,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> Task:
+    """Create a new task."""
     task.id = str(uuid.uuid4())
     return task
 
 @app.get("/messages/{session_id}")
-async def get_message_history(session_id: str, current_user: str = Depends(get_current_user)):
+async def get_message_history(
+    session_id: str,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get message history."""
     return messages_db.get(current_user, [])
 
 @app.get("/health")
 async def health_check():
+    """Health check endpoint."""
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":

@@ -1,4 +1,7 @@
+// ignore_for_file: unused_import
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../config/theme/app_colors.dart';
 import '../config/theme/app_typography.dart';
 import 'dashboard/dashboard_screen.dart';
@@ -6,6 +9,8 @@ import 'chat/chat_screen.dart';
 import 'presence/presence_screen.dart';
 import 'routines/routines_screen.dart';
 import 'notes/notes_screen.dart';
+import 'projects/projects_screen.dart';
+import 'settings/settings_screen.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({Key? key}) : super(key: key);

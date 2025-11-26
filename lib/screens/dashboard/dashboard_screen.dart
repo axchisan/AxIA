@@ -1,7 +1,12 @@
+// ignore_for_file: unused_import
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme/app_colors.dart';
 import '../../config/theme/app_typography.dart';
+import '../../providers/presence_provider.dart';
+import '../../providers/chat_provider.dart';
+import '../../providers/routine_provider.dart';
 import '../../providers/theme_provider.dart';
 import 'widgets/greeting_card.dart';
 import 'widgets/presence_widget.dart';

@@ -33,6 +33,8 @@ dependencies:
   # Time & Date (intl ya está arriba)
   # Icons
   material_design_icons_flutter: ^7.0.7296
+  flutter_sound: ^9.29.14
+  flutter_secure_storage: ^4.2.1
 
 dev_dependencies:
   flutter_test:
