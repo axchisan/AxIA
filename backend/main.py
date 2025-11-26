@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, status
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, status, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import jwt
@@ -19,7 +19,13 @@ logger = logging.getLogger(__name__)
 
 # Environment variables
 SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is required")
+
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL")
+if not N8N_WEBHOOK_URL:
+    raise RuntimeError("N8N_WEBHOOK_URL environment variable is required")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days
 
@@ -75,44 +81,39 @@ class Task(BaseModel):
     completed: bool = False
     due_date: Optional[str] = None
 
-# Utility functions
+# JWT Utility functions
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def verify_token(token: str):
+def verify_token(token: str) -> str:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
+        username: str = payload.get("sub")
         if username is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise HTTPException(status_code=401, detail="Invalid token: missing subject")
         return username
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-async def get_current_user(credentials: HTTPAuthCredentials = Depends(HTTPBearer())) -> str:
+# Security scheme
+bearer_scheme = HTTPBearer()
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)
+) -> str:
     return verify_token(credentials.credentials)
 
 # Routes
 @app.post("/token", response_model=TokenResponse)
 async def login(username: str, password: str):
-    """
-    Authenticate user and return JWT token.
-    STEP 1: Autenticación
-    """
-    # Simulate user validation (replace with real database)
     if username == "duvan" and password == "password123":
         access_token = create_access_token(data={"sub": username})
-        expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_in = ACCESS_TOKEN_EXPIRE_MINUTES * 60
         
         users_db[username] = {
             "username": username,
@@ -122,20 +123,15 @@ async def login(username: str, password: str):
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "expires_in": int(expires_delta.total_seconds())
+            "expires_in": expires_in
         }
     
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @app.post("/send-message")
 async def send_message(request: MessageRequest, current_user: str = Depends(get_current_user)):
-    """
-    Send message to AxIA (text or audio).
-    STEP 2 & 3: Envío de mensajes
-    """
     session_id = str(uuid.uuid4())
     
-    # Prepare message for n8n
     payload = {
         "session_id": session_id,
         "user": current_user,
@@ -145,7 +141,6 @@ async def send_message(request: MessageRequest, current_user: str = Depends(get_
         "audio_base64": request.audio_base64
     }
     
-    # Store message in local DB
     if current_user not in messages_db:
         messages_db[current_user] = []
     
@@ -157,13 +152,11 @@ async def send_message(request: MessageRequest, current_user: str = Depends(get_
         "timestamp": datetime.utcnow().isoformat()
     })
     
-    # Forward to n8n webhook
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(N8N_WEBHOOK_URL, json=payload) as response:
                 result = await response.json()
                 
-                # Store assistant response
                 messages_db[current_user].append({
                     "session_id": session_id,
                     "role": "assistant",
@@ -183,12 +176,12 @@ async def send_message(request: MessageRequest, current_user: str = Depends(get_
         raise HTTPException(status_code=500, detail="Error processing message")
 
 @app.websocket("/ws/{username}")
-async def websocket_endpoint(websocket: WebSocket, username: str, token: str):
-    """
-    WebSocket for real-time chat.
-    STEP 2: Conexión WebSocket
-    """
-    # Verify token
+async def websocket_endpoint(websocket: WebSocket, username: str, token: str = None):
+    # Validar token en WebSocket (viene como query parameter: ?token=xxx)
+    if not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    
     try:
         verify_token(token)
     except HTTPException:
@@ -205,10 +198,8 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str):
         while True:
             data = await websocket.receive_text()
             message_data = json.loads(data)
-            
             session_id = str(uuid.uuid4())
             
-            # Forward to n8n
             payload = {
                 "session_id": session_id,
                 "user": username,
@@ -218,94 +209,58 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str):
             
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(N8N_WEBHOOK_URL, json=payload) as response:
-                        if response.status == 200:
-                            result = await response.json()
-                            
-                            # Send response back through WebSocket
+                    async with session.post(N8N_WEBHOOK_URL, json=payload) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
                             response_msg = {
                                 "session_id": session_id,
                                 "output": result.get("output", ""),
                                 "type": result.get("type", "text"),
                                 "timestamp": datetime.utcnow().isoformat()
                             }
-                            
                             await websocket.send_json(response_msg)
+                        else:
+                            await websocket.send_json({"error": "n8n error", "session_id": session_id})
             except Exception as e:
-                logger.error(f"Error in WebSocket: {str(e)}")
-                await websocket.send_json({
-                    "error": "Error processing message",
-                    "session_id": session_id
-                })
-    
+                logger.error(f"WebSocket error: {e}")
+                await websocket.send_json({"error": "Processing failed", "session_id": session_id})
+                
     except Exception as e:
-        logger.info(f"WebSocket closed: {str(e)}")
+        logger.info(f"WebSocket disconnected: {e}")
     finally:
-        active_connections[username].remove(websocket)
+        if websocket in active_connections.get(username, []):
+            active_connections[username].remove(websocket)
 
+# Resto de rutas (sin cambios, solo con autenticación correcta)
 @app.get("/calendar/events")
 async def get_calendar_events(current_user: str = Depends(get_current_user)) -> List[CalendarEvent]:
-    """
-    Get user's calendar events from Google Calendar via n8n.
-    STEP 5: Integración con APIs
-    """
-    # Mock data - replace with n8n integration
     return [
         CalendarEvent(
-            id="1",
-            title="Reunión con cliente",
+            id="1", title="Reunión con cliente",
             start_time=(datetime.utcnow() + timedelta(days=1)).isoformat(),
             end_time=(datetime.utcnow() + timedelta(days=1, hours=1)).isoformat(),
             description="Discutir propuesta"
         ),
-        CalendarEvent(
-            id="2",
-            title="Revisión de proyecto",
-            start_time=(datetime.utcnow() + timedelta(days=2)).isoformat(),
-            end_time=(datetime.utcnow() + timedelta(days=2, hours=2)).isoformat(),
-        )
     ]
 
 @app.get("/tasks")
 async def get_tasks(current_user: str = Depends(get_current_user)) -> List[Task]:
-    """
-    Get user's tasks.
-    STEP 5: Integración con APIs
-    """
-    # Mock data
     return [
-        Task(
-            id="1",
-            title="Completar documentación",
-            description="Terminar docs del proyecto",
-            completed=False,
-            due_date=(datetime.utcnow() + timedelta(days=1)).isoformat()
-        ),
-        Task(
-            id="2",
-            title="Revisar código",
-            description="PR review",
-            completed=True,
-            due_date=(datetime.utcnow()).isoformat()
-        )
+        Task(id="1", title="Completar documentación", completed=False),
+        Task(id="2", title="Revisar código", completed=True),
     ]
 
 @app.post("/tasks")
 async def create_task(task: Task, current_user: str = Depends(get_current_user)) -> Task:
-    """Create a new task."""
     task.id = str(uuid.uuid4())
     return task
 
 @app.get("/messages/{session_id}")
 async def get_message_history(session_id: str, current_user: str = Depends(get_current_user)):
-    """Get message history for a session."""
-    if current_user in messages_db:
-        return messages_db[current_user]
-    return []
+    return messages_db.get(current_user, [])
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":
