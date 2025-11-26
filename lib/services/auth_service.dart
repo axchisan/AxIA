@@ -10,6 +10,8 @@ class AuthService {
 
   Future<bool> login(String username, String password) async {
     try {
+      print('[v0] Attempting login for user: $username');
+      
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.tokenEndpoint}'),
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -17,45 +19,49 @@ class AuthService {
           'username': username,
           'password': password,
         },
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('Connection timeout'),
       );
+
+      print('[v0] Login response status: ${response.statusCode}');
+      print('[v0] Login response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final token = data['access_token'];
-        // ignore: unused_local_variable
-        final expiresIn = data['expires_in'];
 
-        // Store token securely
         await _secureStorage.write(key: _tokenKey, value: token);
         await _secureStorage.write(key: _userKey, value: username);
 
+        print('[v0] Login successful, token stored');
         return true;
+      } else if (response.statusCode == 401) {
+        print('[v0] Invalid credentials');
+        return false;
+      } else {
+        print('[v0] Login error: ${response.statusCode}');
+        return false;
       }
-
-      return false;
     } catch (e) {
-      print('Login error: $e');
+      print('[v0] Login exception: $e');
       return false;
     }
   }
 
-  // Get stored token
   Future<String?> getToken() async {
     return await _secureStorage.read(key: _tokenKey);
   }
 
-  // Get current user
   Future<String?> getCurrentUser() async {
     return await _secureStorage.read(key: _userKey);
   }
 
-  // Check if user is authenticated
   Future<bool> isAuthenticated() async {
     final token = await getToken();
     return token != null && token.isNotEmpty;
   }
 
-  // Logout
   Future<void> logout() async {
     await _secureStorage.delete(key: _tokenKey);
     await _secureStorage.delete(key: _userKey);

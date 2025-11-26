@@ -30,6 +30,35 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  void _handleLogin(BuildContext context, AuthProvider authProvider) async {
+    if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter username and password'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final success = await authProvider.login(
+      _usernameController.text,
+      _passwordController.text,
+    );
+
+    if (success && mounted) {
+      Navigator.of(context).pushReplacementNamed('/');
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.error ?? 'Login failed'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -148,29 +177,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 Consumer<AuthProvider>(
                   builder: (context, authProvider, _) {
                     return GradientButton(
-                      onPressed: authProvider.isLoading
-                          ? null
-                          : () async {
-                              final success = await authProvider.login(
-                                _usernameController.text,
-                                _passwordController.text,
-                              );
-
-                              if (success) {
-                                if (mounted) {
-                                  Navigator.of(context).pushReplacementNamed('/');
-                                }
-                              } else {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(authProvider.error ?? 'Login failed'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
-                            },
+                      onPressed: () {
+                        if (!authProvider.isLoading) {
+                          _handleLogin(context, authProvider);
+                        }
+                      },
                       label: authProvider.isLoading ? 'Logging in...' : 'Login',
                     );
                   },
