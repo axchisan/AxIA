@@ -15,7 +15,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from database import get_db, init_db, engine
+from database import Base, get_db, init_db, engine
 from models import User, UserCreate, UserResponse, UserLogin
 from security import hash_password, verify_password
 
@@ -63,8 +63,8 @@ active_connections: Dict[str, List] = {}
 async def startup():
     try:
         async with engine.begin() as conn:
-            await conn.run_sync(lambda conn: None)  # Test connection
-        logger.info("Database connection successful")
+            await conn.run_sync(Base.metadata.create_all)  # ← Esto crea las tablas si no existen
+        logger.info("Database tables ensured (created if not exist)")
     except Exception as e:
         logger.error(f"Database connection failed: {str(e)}")
         raise
