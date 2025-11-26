@@ -51,4 +51,9 @@ class AppColors {
     Color(0xFFBB86FC),
     Color(0xFF00D9FF),
   ];
+
+  static Color get background => bgDarkPrimary;
+  static Color get accentPurple => neonPurple;
+  static Color get textSecondary => textDarkSecondary;
+  static Color get surface => bgDarkCard;
 }
