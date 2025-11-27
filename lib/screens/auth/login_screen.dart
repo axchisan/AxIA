@@ -70,34 +70,50 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo
+                // === LOGO ACTUALIZADO (igual que en SplashScreen) ===
                 Container(
-                  height: 100,
-                  width: 100,
+                  height: 140,
+                  width: 140,
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [AppColors.primaryPurple, AppColors.accentPurple],
+                      colors: [
+                        AppColors.primaryPurple,
+                        AppColors.accentPurple,
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primaryPurple.withOpacity(0.5),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
                   ),
                   child: const Center(
-                    child: Text(
-                      'AxIA',
-                      style: TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: Text(
+                        'AxIA',
+                        style: TextStyle(
+                          fontSize: 48,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
                 ),
+                // ==================================================
+
                 const SizedBox(height: 40),
 
                 // Title
                 const Text(
-                  'Welcome to AxIA',
+                  'Bienvenido a AxIA',
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
@@ -106,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Your unified AI assistant',
+                  'Tu compañero de IA para todas tus necesidades.',
                   style: TextStyle(
                     fontSize: 14,
                     color: AppColors.textSecondary,
@@ -133,7 +149,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppColors.primaryPurple, width: 2),
+                      borderSide:
+                          BorderSide(color: AppColors.primaryPurple, width: 2),
                     ),
                   ),
                 ),
@@ -151,7 +168,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     fillColor: AppColors.surface,
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                         color: AppColors.textSecondary,
                       ),
                       onPressed: () {
@@ -168,7 +187,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppColors.primaryPurple, width: 2),
+                      borderSide:
+                          BorderSide(color: AppColors.primaryPurple, width: 2),
                     ),
                   ),
                 ),
@@ -182,35 +202,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           _handleLogin(context, authProvider);
                         }
                       },
-                      label: authProvider.isLoading ? 'Logging in...' : 'Login',
+                      label: authProvider.isLoading
+                          ? 'Iniciando sesión...'
+                          : 'Iniciar sesión',
                     );
                   },
                 ),
                 const SizedBox(height: 16),
-
-                // Demo credentials
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.primaryPurple.withOpacity(0.3)),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'Demo Credentials:',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Username: duvan\nPassword: password123',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),

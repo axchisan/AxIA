@@ -111,7 +111,7 @@ class _SplashScreenState extends State<SplashScreen>
             FadeTransition(
               opacity: _fadeAnimation,
               child: Text(
-                'Your Unified AI Assistant',
+                'Tu asistente de IA personal',
                 style: TextStyle(
                   fontSize: 16,
                   color: AppColors.textSecondary,
