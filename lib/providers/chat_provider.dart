@@ -43,7 +43,6 @@ class ChatProvider extends ChangeNotifier {
         _messages = decoded.map((json) => ChatMessage.fromJson(json)).toList();
         notifyListeners();
       } catch (e) {
-        print('[ChatProvider] Error loading messages: $e');
         _loadMockData();
       }
     } else {
@@ -60,7 +59,7 @@ class ChatProvider extends ChangeNotifier {
       );
       await _prefs!.setString('chat_messages', messagesJson);
     } catch (e) {
-      print('[ChatProvider] Error saving messages: $e');
+      // Ignore save errors
     }
   }
 
@@ -97,12 +96,9 @@ class ChatProvider extends ChangeNotifier {
       _currentUsername = currentUser;
 
       final wsUrl = '${ApiConfig.wsUrl}/$currentUser?token=$token';
-      
-      print('[ChatProvider] Connecting to WebSocket: $wsUrl');
 
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 
-      // Listen to incoming messages
       _channel!.stream.listen(
         (message) {
           _handleIncomingMessage(message);
@@ -110,25 +106,21 @@ class ChatProvider extends ChangeNotifier {
         onError: (error) {
           _error = 'WebSocket error: $error';
           _isConnected = false;
-          print('[ChatProvider] WebSocket error: $error');
           notifyListeners();
         },
         onDone: () {
           _isConnected = false;
-          print('[ChatProvider] WebSocket connection closed');
           notifyListeners();
         },
       );
 
       _isConnected = true;
       _isLoading = false;
-      print('[ChatProvider] WebSocket connected successfully');
       notifyListeners();
     } catch (e) {
       _error = 'Failed to connect: $e';
       _isConnected = false;
       _isLoading = false;
-      print('[ChatProvider] Connection error: $e');
       notifyListeners();
     }
   }
@@ -223,16 +215,14 @@ class ChatProvider extends ChangeNotifier {
 
     try {
       _channel!.sink.add(payload);
-      print('[ChatProvider] Message sent: $content');
     } catch (e) {
       _error = 'Failed to send message: $e';
-      print('[ChatProvider] Send error: $e');
     }
 
     notifyListeners();
   }
 
-  Future<void> sendAudioMessage(String audioBase64) async {
+  Future<void> sendAudioMessage(String audioBase64, String localPath) async {
     if (!_isConnected || _channel == null) {
       _error = 'WebSocket not connected';
       notifyListeners();
@@ -245,6 +235,7 @@ class ChatProvider extends ChangeNotifier {
       sender: MessageSender.user,
       timestamp: DateTime.now(),
       isVoice: true,
+      localAudioPath: localPath,
     );
     _messages.add(userMessage);
     _saveMessagesToStorage();
@@ -275,10 +266,8 @@ class ChatProvider extends ChangeNotifier {
 
     try {
       _channel!.sink.add(payload);
-      print('[ChatProvider] Audio message sent (${audioBase64.length} chars)');
     } catch (e) {
       _error = 'Failed to send audio: $e';
-      print('[ChatProvider] Audio send error: $e');
     }
 
     notifyListeners();

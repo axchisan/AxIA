@@ -134,4 +134,204 @@ class ApiService {
       return false;
     }
   }
+
+  Future<List<Map<String, dynamic>>> getRoutines() async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/routines'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return List<Map<String, dynamic>>.from(data);
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized');
+      } else {
+        throw Exception('Failed to load routines');
+      }
+    } catch (e) {
+      throw Exception('Error fetching routines: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> createRoutine(Map<String, dynamic> routineData) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/routines'),
+        headers: headers,
+        body: jsonEncode(routineData),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Failed to create routine');
+      }
+    } catch (e) {
+      throw Exception('Error creating routine: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> updateRoutine(int routineId, Map<String, dynamic> updates) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.patch(
+        Uri.parse('${ApiConfig.baseUrl}/routines/$routineId'),
+        headers: headers,
+        body: jsonEncode(updates),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Failed to update routine');
+      }
+    } catch (e) {
+      throw Exception('Error updating routine: $e');
+    }
+  }
+
+  Future<void> deleteRoutine(int routineId) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/routines/$routineId'),
+        headers: headers,
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        throw Exception('Failed to delete routine');
+      }
+    } catch (e) {
+      throw Exception('Error deleting routine: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getNotes() async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/notes'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return List<Map<String, dynamic>>.from(data);
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized');
+      } else {
+        throw Exception('Failed to load notes');
+      }
+    } catch (e) {
+      throw Exception('Error fetching notes: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> createNote(Map<String, dynamic> noteData) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/notes'),
+        headers: headers,
+        body: jsonEncode(noteData),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Failed to create note');
+      }
+    } catch (e) {
+      throw Exception('Error creating note: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> updateNote(int noteId, Map<String, dynamic> updates) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.patch(
+        Uri.parse('${ApiConfig.baseUrl}/notes/$noteId'),
+        headers: headers,
+        body: jsonEncode(updates),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Failed to update note');
+      }
+    } catch (e) {
+      throw Exception('Error updating note: $e');
+    }
+  }
+
+  Future<void> deleteNote(int noteId) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/notes/$noteId'),
+        headers: headers,
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        throw Exception('Failed to delete note');
+      }
+    } catch (e) {
+      throw Exception('Error deleting note: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> getPresence() async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/presence'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Failed to load presence');
+      }
+    } catch (e) {
+      throw Exception('Error fetching presence: $e');
+    }
+  }
+
+  Future<void> updatePresence(String status, String? customMessage) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/presence/update'),
+        headers: headers,
+        body: jsonEncode({
+          'status': status,
+          'custom_message': customMessage,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to update presence');
+      }
+    } catch (e) {
+      throw Exception('Error updating presence: $e');
+    }
+  }
+
+  Future<void> sendPresenceHeartbeat() async {
+    try {
+      final headers = await _getHeaders();
+      await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/presence/heartbeat'),
+        headers: headers,
+      );
+    } catch (e) {
+      // Silent fail for heartbeat
+    }
+  }
 }

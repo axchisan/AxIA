@@ -52,7 +52,7 @@ class AudioService {
         return false;
       }
 
-      final directory = await getTemporaryDirectory();
+      final directory = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       _currentRecordingPath = '${directory.path}/axia_audio_$timestamp.m4a';
 
@@ -76,7 +76,7 @@ class AudioService {
     }
   }
 
-  Future<String?> stopRecordingAndGetBase64() async {
+  Future<Map<String, dynamic>?> stopRecordingAndGetData() async {
     try {
       if (!_isRecording) {
         return null;
@@ -98,13 +98,10 @@ class AudioService {
       final bytes = await file.readAsBytes();
       final base64Audio = base64Encode(bytes);
 
-      try {
-        await file.delete();
-      } catch (e) {
-        // Ignore deletion errors
-      }
-
-      return base64Audio;
+      return {
+        'base64': base64Audio,
+        'localPath': path,
+      };
     } catch (e) {
       _isRecording = false;
       _recordingStartTime = null;
@@ -139,6 +136,18 @@ class AudioService {
   double getPlaybackSpeed(String messageId) {
     final player = getPlayerForMessage(messageId);
     return player.speed;
+  }
+
+  Future<void> playAudioFromPath(String messageId, String filePath) async {
+    try {
+      await stopAllExcept(messageId);
+      
+      final player = getPlayerForMessage(messageId);
+      await player.setFilePath(filePath);
+      await player.play();
+    } catch (e) {
+      // Ignore playback errors
+    }
   }
 
   Future<void> playAudioFromBase64(String messageId, String audioBase64) async {

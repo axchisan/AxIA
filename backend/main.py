@@ -16,8 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database import Base, get_db, init_db, engine
-from models import User, UserCreate, UserResponse, UserLogin
-from security import hash_password, verify_password
+from models import User, UserCreate, UserResponse, UserLogin, Routine, Note, MyActivity, RoutineCreate, RoutineUpdate, RoutineResponse, NoteCreate, NoteUpdate, NoteResponse, PresenceUpdate, PresenceResponse
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING)
@@ -471,6 +470,300 @@ async def receive_app_message(request: Request):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/routines", response_model=List[RoutineResponse])
+async def get_routines(
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == current_user)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(
+        select(Routine).where(Routine.user_id == user.id)
+    )
+    routines = result.scalars().all()
+    return routines
+
+@app.post("/routines", response_model=RoutineResponse)
+async def create_routine(
+    routine_data: RoutineCreate,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == current_user)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    new_routine = Routine(
+        user_id=user.id,
+        name=routine_data.name,
+        description=routine_data.description,
+        icon=routine_data.icon,
+        duration_minutes=routine_data.duration_minutes,
+        category=routine_data.category,
+        scheduled_days=routine_data.scheduled_days
+    )
+    
+    db.add(new_routine)
+    await db.commit()
+    await db.refresh(new_routine)
+    
+    return new_routine
+
+@app.patch("/routines/{routine_id}", response_model=RoutineResponse)
+async def update_routine(
+    routine_id: int,
+    routine_data: RoutineUpdate,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == current_user)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(
+        select(Routine).where(
+            Routine.id == routine_id,
+            Routine.user_id == user.id
+        )
+    )
+    routine = result.scalar_one_or_none()
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+    
+    for field, value in routine_data.dict(exclude_unset=True).items():
+        setattr(routine, field, value)
+    
+    await db.commit()
+    await db.refresh(routine)
+    
+    return routine
+
+@app.delete("/routines/{routine_id}")
+async def delete_routine(
+    routine_id: int,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == current_user)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(
+        select(Routine).where(
+            Routine.id == routine_id,
+            Routine.user_id == user.id
+        )
+    )
+    routine = result.scalar_one_or_none()
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+    
+    await db.delete(routine)
+    await db.commit()
+    
+    return {"status": "deleted", "id": routine_id}
+
+@app.get("/notes", response_model=List[NoteResponse])
+async def get_notes(
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == current_user)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(
+        select(Note).where(Note.user_id == user.id).order_by(Note.updated_at.desc())
+    )
+    notes = result.scalars().all()
+    return notes
+
+@app.post("/notes", response_model=NoteResponse)
+async def create_note(
+    note_data: NoteCreate,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == current_user)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    new_note = Note(
+        user_id=user.id,
+        title=note_data.title,
+        content=note_data.content,
+        tags=note_data.tags,
+        is_pinned=note_data.is_pinned,
+        color=note_data.color
+    )
+    
+    db.add(new_note)
+    await db.commit()
+    await db.refresh(new_note)
+    
+    return new_note
+
+@app.patch("/notes/{note_id}", response_model=NoteResponse)
+async def update_note(
+    note_id: int,
+    note_data: NoteUpdate,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == current_user)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(
+        select(Note).where(
+            Note.id == note_id,
+            Note.user_id == user.id
+        )
+    )
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    
+    for field, value in note_data.dict(exclude_unset=True).items():
+        setattr(note, field, value)
+    
+    note.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(note)
+    
+    return note
+
+@app.delete("/notes/{note_id}")
+async def delete_note(
+    note_id: int,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(User).where(User.username == current_user)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = await db.execute(
+        select(Note).where(
+            Note.id == note_id,
+            Note.user_id == user.id
+        )
+    )
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    
+    await db.delete(note)
+    await db.commit()
+    
+    return {"status": "deleted", "id": note_id}
+
+@app.get("/presence", response_model=PresenceResponse)
+async def get_presence(
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(MyActivity).where(MyActivity.id == 1)
+    )
+    activity = result.scalar_one_or_none()
+    
+    if not activity:
+        activity = MyActivity(id=1, is_online=False, status='available')
+        db.add(activity)
+        await db.commit()
+        await db.refresh(activity)
+    
+    # Calculate inactive minutes
+    if activity.last_active:
+        inactive_time = datetime.utcnow() - activity.last_active
+        inactive_minutes = int(inactive_time.total_seconds() / 60)
+    else:
+        inactive_minutes = 0
+    
+    return PresenceResponse(
+        is_online=activity.is_online,
+        status=activity.status,
+        custom_message=activity.custom_message,
+        last_active=activity.last_active or datetime.utcnow(),
+        inactive_minutes=inactive_minutes
+    )
+
+@app.post("/presence/update")
+async def update_presence(
+    presence_data: PresenceUpdate,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(MyActivity).where(MyActivity.id == 1)
+    )
+    activity = result.scalar_one_or_none()
+    
+    if not activity:
+        activity = MyActivity(id=1)
+        db.add(activity)
+    
+    activity.status = presence_data.status
+    activity.custom_message = presence_data.custom_message
+    activity.last_active = datetime.utcnow()
+    activity.is_online = True
+    activity.inactive_minutes = 0
+    
+    await db.commit()
+    await db.refresh(activity)
+    
+    return {"status": "updated", "current_status": activity.status}
+
+@app.post("/presence/heartbeat")
+async def presence_heartbeat(
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(MyActivity).where(MyActivity.id == 1)
+    )
+    activity = result.scalar_one_or_none()
+    
+    if not activity:
+        activity = MyActivity(id=1, is_online=True)
+        db.add(activity)
+    
+    activity.last_active = datetime.utcnow()
+    activity.is_online = True
+    activity.inactive_minutes = 0
+    
+    await db.commit()
+    
+    return {"status": "ok", "last_active": activity.last_active.isoformat()}
 
 if __name__ == "__main__":
     import uvicorn
