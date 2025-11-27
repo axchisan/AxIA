@@ -366,9 +366,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       setState(() => _isRecording = false);
       HapticFeedback.lightImpact();
       
-      final audioBase64 = await chatProvider.audioService.stopRecordingAndGetBase64();
-      if (audioBase64 != null) {
-        await chatProvider.sendAudioMessage(audioBase64);
+      final audioData = await chatProvider.audioService.stopRecordingAndGetData();
+      if (audioData != null) {
+        await chatProvider.sendAudioMessage(audioData['base64'], audioData['localPath']);
       } else {
         _showSnackbar('Error al procesar el audio');
       }
@@ -385,9 +385,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       setState(() => _isRecording = false);
       HapticFeedback.lightImpact();
       
-      final audioBase64 = await chatProvider.audioService.stopRecordingAndGetBase64();
-      if (audioBase64 != null) {
-        await chatProvider.sendAudioMessage(audioBase64);
+      final audioData = await chatProvider.audioService.stopRecordingAndGetData();
+      if (audioData != null) {
+        await chatProvider.sendAudioMessage(audioData['base64'], audioData['localPath']);
       } else {
         _showSnackbar('Error al procesar el audio');
       }

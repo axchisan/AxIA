@@ -11,6 +11,7 @@ class ChatMessage {
   final bool isVoice;
   final String? audioUrl;
   final String? audioBase64;
+  final String? localAudioPath;
 
   ChatMessage({
     required this.id,
@@ -20,6 +21,7 @@ class ChatMessage {
     this.isVoice = false,
     this.audioUrl,
     this.audioBase64,
+    this.localAudioPath,
   });
 
   Map<String, dynamic> toJson() {
@@ -31,6 +33,7 @@ class ChatMessage {
       'isVoice': isVoice,
       'audioUrl': audioUrl,
       'audioBase64': audioBase64,
+      'localAudioPath': localAudioPath,
     };
   }
 
@@ -43,6 +46,7 @@ class ChatMessage {
       isVoice: json['isVoice'] as bool? ?? false,
       audioUrl: json['audioUrl'] as String?,
       audioBase64: json['audioBase64'] as String?,
+      localAudioPath: json['localAudioPath'] as String?,
     );
   }
 }
