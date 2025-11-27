@@ -175,6 +175,12 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> deleteMessage(String messageId) async {
+    _messages.removeWhere((msg) => msg.id == messageId);
+    await _saveMessagesToStorage();
+    notifyListeners();
+  }
+
   void sendMessage(String content) {
     if (!_isConnected || _channel == null) {
       _error = 'WebSocket not connected';

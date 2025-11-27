@@ -20,7 +20,7 @@ from models import User, UserCreate, UserResponse, UserLogin
 from security import hash_password, verify_password
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Environment variables
@@ -73,7 +73,6 @@ async def startup():
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables ensured (created if not exist)")
     except Exception as e:
         logger.error(f"Database connection failed: {str(e)}")
         raise
@@ -274,7 +273,6 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
         return
     
     await websocket.accept()
-    logger.info(f"WebSocket connected for user: {username}")
     
     if username not in active_connections:
         active_connections[username] = []
@@ -312,7 +310,7 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
                 "channel": "app",
                 "data": {
                     "key": {
-                        "remoteJid": WHATSAPP_REMOTE_JID,  # Configurable
+                        "remoteJid": WHATSAPP_REMOTE_JID,
                         "fromMe": False,
                         "id": session_id
                     },
@@ -328,15 +326,13 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
                 },
                 "destination": N8N_WEBHOOK_URL,
                 "date_time": datetime.utcnow().isoformat(),
-                "sender": WHATSAPP_SENDER_JID  # Configurable
+                "sender": WHATSAPP_SENDER_JID
             }
             
             if n8n_payload["data"]["message"].get("conversation") is None:
                 del n8n_payload["data"]["message"]["conversation"]
             if n8n_payload["data"]["message"].get("base64") is None:
                 del n8n_payload["data"]["message"]["base64"]
-            
-            logger.info(f"Sending to n8n: {json.dumps(n8n_payload, indent=2)}")
             
             try:
                 async with aiohttp.ClientSession() as session:
@@ -360,8 +356,7 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
                                 }
                                 
                                 await websocket.send_json(response_msg)
-                                logger.info(f"Response sent to Flutter: {response_msg}")
-                            except Exception as json_error:
+                            except Exception:
                                 text_resp = await resp.text()
                                 await websocket.send_json({
                                     "session_id": session_id,
@@ -370,26 +365,23 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
                                     "timestamp": datetime.utcnow().isoformat()
                                 })
                         else:
-                            logger.error(f"n8n returned status: {resp.status}")
                             await websocket.send_json({
                                 "error": "n8n error", 
                                 "session_id": session_id,
                                 "status": resp.status
                             })
             except Exception as e:
-                logger.error(f"WebSocket processing error: {e}")
                 await websocket.send_json({
                     "error": "Processing failed", 
                     "session_id": session_id,
                     "details": str(e)
                 })
                 
-    except Exception as e:
-        logger.info(f"WebSocket disconnected: {e}")
+    except Exception:
+        pass
     finally:
         if websocket in active_connections.get(username, []):
             active_connections[username].remove(websocket)
-        logger.info(f"WebSocket connection closed for user: {username}")
 
 @app.get("/calendar/events")
 async def get_calendar_events(
@@ -439,36 +431,18 @@ async def health_check():
 
 @app.post("/app-message")
 async def receive_app_message(request: Request):
-    """
-    Endpoint para que n8n envíe respuestas a la app
-    
-    Expected JSON from n8n:
-    {
-        "username": "AxchiSan",
-        "session_id": "uuid-here",
-        "output": "Texto de la respuesta",
-        "type": "text",  // or "audio"
-        "debe_ser_audio": false,
-        "audio_url": null,  // or URL if debe_ser_audio is true
-        "audio_base64": null  // or base64 string if debe_ser_audio is true
-    }
-    """
     try:
         data = await request.json()
-        logger.info(f"Received message from n8n: {json.dumps(data, indent=2)}")
         
         username = data.get('username')
         if not username:
             raise HTTPException(status_code=400, detail="username is required")
         
-        # Find active WebSocket connections for this user
         user_connections = active_connections.get(username, [])
         
         if not user_connections:
-            logger.warning(f"No active connections for user: {username}")
             return {"status": "no_active_connections", "username": username}
         
-        # Prepare response message
         response_msg = {
             "session_id": data.get('session_id', str(uuid.uuid4())),
             "output": data.get('output', ''),
@@ -479,17 +453,13 @@ async def receive_app_message(request: Request):
             "timestamp": datetime.utcnow().isoformat()
         }
         
-        # Send to all active connections for this user
         disconnected = []
         for ws in user_connections:
             try:
                 await ws.send_json(response_msg)
-                logger.info(f"Message sent to WebSocket for user: {username}")
-            except Exception as e:
-                logger.error(f"Error sending to WebSocket: {e}")
+            except Exception:
                 disconnected.append(ws)
         
-        # Clean up disconnected websockets
         for ws in disconnected:
             user_connections.remove(ws)
         
@@ -500,7 +470,6 @@ async def receive_app_message(request: Request):
         }
         
     except Exception as e:
-        logger.error(f"Error in /app-message: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

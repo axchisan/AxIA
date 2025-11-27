@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:intl/intl.dart';
 import '../../config/theme/app_colors.dart';
 import '../../config/theme/app_typography.dart';
 import '../../providers/chat_provider.dart';
 import '../../widgets/common/glass_card.dart';
+import 'dart:async';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({Key? key}) : super(key: key);
@@ -20,7 +22,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // ignore: unused_field
   bool _isTyping = false;
   bool _isRecording = false;
-  late List<AnimationController> _dotAnimations;
+  bool _isRecordingLocked = false;
+  Timer? _recordingTimer;
+  int _recordingSeconds = 0;
+  double _slideOffset = 0.0;
 
   @override
   void initState() {
@@ -28,28 +33,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ChatProvider>().initializeWebSocket();
     });
-
-    _dotAnimations = List.generate(3, (index) {
-      final controller = AnimationController(
-        duration: const Duration(milliseconds: 600),
-        vsync: this,
-      );
-      controller.repeat(
-        min: 0.0,
-        max: 1.0,
-        period: const Duration(milliseconds: 1200),
-      );
-      return controller;
-    });
   }
 
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
-    for (var controller in _dotAnimations) {
-      controller.dispose();
-    }
+    _recordingTimer?.cancel();
     super.dispose();
   }
 
@@ -101,10 +91,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             builder: (context, chatProvider, _) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (_scrollController.hasClients) {
-                  _scrollController.animateTo(
+                  _scrollController.jumpTo(
                     _scrollController.position.maxScrollExtent,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
                   );
                 }
               });
@@ -126,7 +114,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       alignment: isUserMessage
                           ? Alignment.centerRight
                           : Alignment.centerLeft,
-                      child: _buildMessageBubble(message, isUserMessage),
+                      child: _buildMessageBubble(message, isUserMessage, chatProvider),
                     ),
                   );
                 },
@@ -227,33 +215,106 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             GestureDetector(
               onLongPressStart: (_) => _startVoiceRecording(chatProvider),
               onLongPressEnd: (_) => _stopVoiceRecording(chatProvider),
-              onLongPressCancel: () => _cancelVoiceRecording(chatProvider),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: _isRecording 
-                        ? [Colors.red, Colors.red.shade700]
-                        : AppColors.neonGradient,
-                  ),
-                  shape: BoxShape.circle,
-                  boxShadow: _isRecording
-                      ? [
-                          BoxShadow(
-                            color: Colors.red.withOpacity(0.5),
-                            blurRadius: 20,
-                            spreadRadius: 2,
+              onLongPressMoveUpdate: (details) {
+                if (_isRecording && !_isRecordingLocked) {
+                  setState(() {
+                    _slideOffset = details.localOffsetFromOrigin.dy;
+                    if (_slideOffset < -100) {
+                      _lockRecording();
+                    }
+                  });
+                }
+              },
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Recording indicator
+                  if (_isRecording && !_isRecordingLocked)
+                    Positioned(
+                      bottom: 70,
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.lock_open_rounded,
+                            color: Colors.white.withOpacity(0.7),
+                            size: 24,
                           ),
-                        ]
-                      : null,
-                ),
-                child: Icon(
-                  _isRecording ? Icons.stop_rounded : Icons.mic_rounded,
-                  color: Colors.white,
-                  size: 28,
-                ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Desliza arriba para fijar',
+                            style: AppTypography.caption.copyWith(
+                              color: Colors.white.withOpacity(0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  // Timer
+                  if (_isRecording)
+                    Positioned(
+                      right: 70,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _formatRecordingTime(_recordingSeconds),
+                              style: AppTypography.body2.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  // Mic button
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: _isRecording 
+                            ? [Colors.red, Colors.red.shade700]
+                            : AppColors.neonGradient,
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: _isRecording
+                          ? [
+                              BoxShadow(
+                                color: Colors.red.withOpacity(0.5),
+                                blurRadius: 20,
+                                spreadRadius: 2,
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Icon(
+                      _isRecordingLocked 
+                          ? Icons.send_rounded
+                          : (_isRecording ? Icons.stop_rounded : Icons.mic_rounded),
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                ],
               ),
             ),
         ],
@@ -261,11 +322,35 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
+  String _formatRecordingTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
+  void _lockRecording() {
+    setState(() {
+      _isRecordingLocked = true;
+    });
+    HapticFeedback.mediumImpact();
+  }
+
   Future<void> _startVoiceRecording(ChatProvider chatProvider) async {
     final success = await chatProvider.audioService.startRecording();
     if (success) {
-      setState(() => _isRecording = true);
+      setState(() {
+        _isRecording = true;
+        _recordingSeconds = 0;
+        _isRecordingLocked = false;
+        _slideOffset = 0;
+      });
       HapticFeedback.mediumImpact();
+      
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          _recordingSeconds++;
+        });
+      });
     } else {
       _showSnackbar('No se pudo acceder al micrófono');
     }
@@ -274,21 +359,54 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _stopVoiceRecording(ChatProvider chatProvider) async {
     if (!_isRecording) return;
     
-    setState(() => _isRecording = false);
-    HapticFeedback.lightImpact();
+    _recordingTimer?.cancel();
     
-    final audioBase64 = await chatProvider.audioService.stopRecordingAndGetBase64();
-    if (audioBase64 != null) {
-      await chatProvider.sendAudioMessage(audioBase64);
+    if (_isRecordingLocked) {
+      // Send the audio
+      setState(() => _isRecording = false);
+      HapticFeedback.lightImpact();
+      
+      final audioBase64 = await chatProvider.audioService.stopRecordingAndGetBase64();
+      if (audioBase64 != null) {
+        await chatProvider.sendAudioMessage(audioBase64);
+      } else {
+        _showSnackbar('Error al procesar el audio');
+      }
+      
+      setState(() {
+        _isRecordingLocked = false;
+        _recordingSeconds = 0;
+      });
+    } else if (_recordingSeconds < 1) {
+      // Too short, cancel
+      await _cancelVoiceRecording(chatProvider);
     } else {
-      _showSnackbar('Error al procesar el audio');
+      // Send the audio
+      setState(() => _isRecording = false);
+      HapticFeedback.lightImpact();
+      
+      final audioBase64 = await chatProvider.audioService.stopRecordingAndGetBase64();
+      if (audioBase64 != null) {
+        await chatProvider.sendAudioMessage(audioBase64);
+      } else {
+        _showSnackbar('Error al procesar el audio');
+      }
+      
+      setState(() {
+        _recordingSeconds = 0;
+      });
     }
   }
 
   Future<void> _cancelVoiceRecording(ChatProvider chatProvider) async {
     if (!_isRecording) return;
     
-    setState(() => _isRecording = false);
+    _recordingTimer?.cancel();
+    setState(() {
+      _isRecording = false;
+      _isRecordingLocked = false;
+      _recordingSeconds = 0;
+    });
     await chatProvider.audioService.cancelRecording();
     _showSnackbar('Grabación cancelada');
   }
@@ -371,10 +489,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           children: [
             _buildOptionTile(
               icon: Icons.delete_sweep_rounded,
-              label: 'Limpiar chat',
+              label: 'Vaciar chat',
               onTap: () {
                 Navigator.pop(context);
-                context.read<ChatProvider>().clearMessages();
+                _showConfirmClearDialog();
               },
             ),
             _buildOptionTile(
@@ -387,6 +505,42 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showConfirmClearDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.bgDarkCard,
+        title: Text(
+          '¿Vaciar chat?',
+          style: AppTypography.h5.copyWith(color: AppColors.textDarkPrimary),
+        ),
+        content: Text(
+          'Esta acción eliminará todos los mensajes del historial.',
+          style: AppTypography.body2.copyWith(color: AppColors.textDarkSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancelar',
+              style: TextStyle(color: AppColors.textDarkTertiary),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.read<ChatProvider>().clearMessages();
+            },
+            child: const Text(
+              'Vaciar',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -408,9 +562,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildMessageBubble(dynamic message, bool isUserMessage) {
+  Widget _buildMessageBubble(dynamic message, bool isUserMessage, ChatProvider chatProvider) {
+    final timeFormat = DateFormat('h:mm a');
+    final timeString = timeFormat.format(message.timestamp);
+
     return GestureDetector(
-      onLongPress: () => _showMessageOptions(message),
+      onLongPress: () => _showMessageOptions(message, chatProvider),
       child: GlassCard(
         backgroundColor: isUserMessage
             ? AppColors.primaryViolet
@@ -433,28 +590,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (message.isVoice) ...[
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.mic_rounded,
-                      size: 20,
-                      color: isUserMessage ? Colors.white : AppColors.neonPurple,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Container(
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: isUserMessage
-                              ? Colors.white.withOpacity(0.3)
-                              : AppColors.neonPurple.withOpacity(0.3),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                _buildAudioPlayer(message, isUserMessage, chatProvider),
                 const SizedBox(height: 8),
               ],
               if (isUserMessage)
@@ -504,7 +640,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text(
-                    '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
+                    timeString,
                     style: AppTypography.caption.copyWith(
                       color: isUserMessage
                           ? Colors.white.withOpacity(0.7)
@@ -528,7 +664,138 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _showMessageOptions(dynamic message) {
+  Widget _buildAudioPlayer(dynamic message, bool isUserMessage, ChatProvider chatProvider) {
+    return StreamBuilder<Duration>(
+      stream: chatProvider.audioService.positionStream,
+      builder: (context, snapshot) {
+        final position = snapshot.data ?? Duration.zero;
+        final duration = chatProvider.audioService.duration ?? Duration.zero;
+        final isPlaying = chatProvider.audioService.isPlaying;
+
+        return Column(
+          children: [
+            Row(
+              children: [
+                // Play/Pause button
+                GestureDetector(
+                  onTap: () async {
+                    if (isPlaying) {
+                      await chatProvider.audioService.pausePlayback();
+                    } else {
+                      if (message.audioBase64 != null) {
+                        await chatProvider.audioService.playAudioFromBase64(message.audioBase64);
+                      } else if (message.audioUrl != null) {
+                        await chatProvider.audioService.playAudioFromUrl(message.audioUrl);
+                      }
+                    }
+                    setState(() {});
+                  },
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isUserMessage 
+                          ? Colors.white.withOpacity(0.2)
+                          : AppColors.neonPurple.withOpacity(0.2),
+                    ),
+                    child: Icon(
+                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      color: isUserMessage ? Colors.white : AppColors.neonPurple,
+                      size: 24,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Progress bar
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SliderTheme(
+                        data: SliderThemeData(
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                          activeTrackColor: isUserMessage ? Colors.white : AppColors.neonPurple,
+                          inactiveTrackColor: isUserMessage 
+                              ? Colors.white.withOpacity(0.3)
+                              : AppColors.neonPurple.withOpacity(0.3),
+                          thumbColor: isUserMessage ? Colors.white : AppColors.neonPurple,
+                        ),
+                        child: Slider(
+                          value: duration.inMilliseconds > 0 
+                              ? position.inMilliseconds.toDouble()
+                              : 0,
+                          max: duration.inMilliseconds.toDouble(),
+                          onChanged: (value) async {
+                            await chatProvider.audioService.seekTo(
+                              Duration(milliseconds: value.toInt()),
+                            );
+                          },
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _formatDuration(position),
+                            style: AppTypography.caption.copyWith(
+                              color: isUserMessage 
+                                  ? Colors.white.withOpacity(0.7)
+                                  : AppColors.textDarkTertiary,
+                            ),
+                          ),
+                          Text(
+                            _formatDuration(duration),
+                            style: AppTypography.caption.copyWith(
+                              color: isUserMessage 
+                                  ? Colors.white.withOpacity(0.7)
+                                  : AppColors.textDarkTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Speed control
+                PopupMenuButton<double>(
+                  icon: Icon(
+                    Icons.speed_rounded,
+                    color: isUserMessage ? Colors.white : AppColors.neonPurple,
+                    size: 20,
+                  ),
+                  color: AppColors.bgDarkCard,
+                  onSelected: (speed) async {
+                    await chatProvider.audioService.setPlaybackSpeed(speed);
+                    setState(() {});
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(value: 0.5, child: Text('0.5x')),
+                    const PopupMenuItem(value: 0.75, child: Text('0.75x')),
+                    const PopupMenuItem(value: 1.0, child: Text('1.0x')),
+                    const PopupMenuItem(value: 1.25, child: Text('1.25x')),
+                    const PopupMenuItem(value: 1.5, child: Text('1.5x')),
+                    const PopupMenuItem(value: 2.0, child: Text('2.0x')),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    return '${minutes.toString().padLeft(1, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  void _showMessageOptions(dynamic message, ChatProvider chatProvider) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.bgDarkSecondary,
@@ -550,6 +817,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 Clipboard.setData(ClipboardData(text: message.content));
                 Navigator.pop(context);
                 _showSnackbar('Mensaje copiado');
+              },
+            ),
+            _buildOptionTile(
+              icon: Icons.delete_outline_rounded,
+              label: 'Eliminar',
+              onTap: () {
+                Navigator.pop(context);
+                chatProvider.deleteMessage(message.id);
+                _showSnackbar('Mensaje eliminado');
               },
             ),
           ],
