@@ -135,8 +135,8 @@ class NoteResponse(BaseModel):
         from_attributes = True
 
 class PresenceUpdate(BaseModel):
-    status: str  # 'available', 'focus', 'away', 'busy'
-    custom_message: Optional[str] = None
+    """No fields needed for simple heartbeat updates"""
+    pass
 
 class PresenceResponse(BaseModel):
     is_online: bool

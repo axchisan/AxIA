@@ -111,6 +111,18 @@ class Task(BaseModel):
     completed: bool = False
     due_date: Optional[str] = None
 
+class CalendarEventCreate(BaseModel):
+    summary: str
+    start_time: str
+    end_time: str
+    description: Optional[str] = None
+    location: Optional[str] = None
+
+class GoogleTaskCreate(BaseModel):
+    title: str
+    notes: Optional[str] = None
+    due: Optional[str] = None
+
 # JWT Utility functions
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -404,36 +416,32 @@ async def get_calendar_events(
 
 @app.post("/calendar/events")
 async def create_calendar_event(
-    summary: str,
-    start_time: str,
-    end_time: str,
-    description: Optional[str] = None,
-    location: Optional[str] = None,
+    event: CalendarEventCreate,
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new event in Google Calendar"""
     try:
-        start_dt = datetime.fromisoformat(start_time)
-        end_dt = datetime.fromisoformat(end_time)
+        start_dt = datetime.fromisoformat(event.start_time.replace('Z', '+00:00'))
+        end_dt = datetime.fromisoformat(event.end_time.replace('Z', '+00:00'))
         
-        event = await google_calendar.create_event(
-            summary=summary,
+        created_event = await google_calendar.create_event(
+            summary=event.summary,
             start=start_dt,
             end=end_dt,
-            description=description,
-            location=location
+            description=event.description,
+            location=event.location
         )
         
-        if not event:
+        if not created_event:
             raise HTTPException(status_code=500, detail="Failed to create event")
         
-        return event
+        return created_event
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid datetime format: {e}")
     except Exception as e:
         logger.error(f"Error creating calendar event: {e}")
-        raise HTTPException(status_code=500, detail="Error creating calendar event")
+        raise HTTPException(status_code=500, detail=f"Error creating event: {str(e)}")
 
 @app.patch("/calendar/events/{event_id}")
 async def update_calendar_event(
@@ -484,31 +492,31 @@ async def get_google_tasks(
 
 @app.post("/google/tasks")
 async def create_google_task(
-    title: str,
-    notes: Optional[str] = None,
-    due: Optional[str] = None,
+    task: GoogleTaskCreate,
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new task in Google Tasks"""
     try:
-        due_dt = datetime.fromisoformat(due) if due else None
+        due_dt = None
+        if task.due:
+            due_dt = datetime.fromisoformat(task.due.replace('Z', '+00:00'))
         
-        task = await google_tasks.create_task(
-            title=title,
-            notes=notes,
+        created_task = await google_tasks.create_task(
+            title=task.title,
+            notes=task.notes,
             due=due_dt
         )
         
-        if not task:
+        if not created_task:
             raise HTTPException(status_code=500, detail="Failed to create task")
         
-        return task
+        return created_task
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid datetime format: {e}")
     except Exception as e:
         logger.error(f"Error creating Google task: {e}")
-        raise HTTPException(status_code=500, detail="Error creating task")
+        raise HTTPException(status_code=500, detail=f"Error creating task: {str(e)}")
 
 @app.patch("/google/tasks/{task_id}")
 async def update_google_task(
@@ -790,33 +798,30 @@ async def get_presence(
             # Create default activity
             activity = MyActivity(
                 is_online=False,
-                status='available',
-                inactive_minutes=0
+                last_active=datetime.utcnow()
             )
             db.add(activity)
             await db.commit()
             await db.refresh(activity)
         
         # Calculate inactive minutes
+        inactive_minutes = 0
         if activity.last_active:
             now = datetime.utcnow()
             delta = now - activity.last_active
-            activity.inactive_minutes = int(delta.total_seconds() / 60)
+            inactive_minutes = int(delta.total_seconds() / 60)
         
         return PresenceResponse(
             is_online=activity.is_online,
-            status=activity.status or 'available',
-            custom_message=activity.custom_message,
             last_active=activity.last_active,
-            inactive_minutes=activity.inactive_minutes
+            inactive_minutes=inactive_minutes
         )
     except Exception as e:
         logger.error(f"Error fetching presence: {e}")
-        raise HTTPException(status_code=500, detail="Error fetching presence")
+        raise HTTPException(status_code=500, detail=f"Error fetching presence: {str(e)}")
 
 @app.post("/presence/update")
 async def update_presence(
-    presence_data: PresenceUpdate,
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -831,12 +836,9 @@ async def update_presence(
             activity = MyActivity()
             db.add(activity)
         
-        # Update fields
-        activity.status = presence_data.status
-        activity.custom_message = presence_data.custom_message
+        # Update only existing fields
         activity.last_active = datetime.utcnow()
         activity.is_online = True
-        activity.inactive_minutes = 0
         
         await db.commit()
         await db.refresh(activity)
@@ -844,7 +846,7 @@ async def update_presence(
         return {"status": "success", "message": "Presence updated"}
     except Exception as e:
         logger.error(f"Error updating presence: {e}")
-        raise HTTPException(status_code=500, detail="Error updating presence")
+        raise HTTPException(status_code=500, detail=f"Error updating presence: {str(e)}")
 
 @app.post("/presence/heartbeat")
 async def presence_heartbeat(
@@ -859,19 +861,21 @@ async def presence_heartbeat(
         activity = result.scalar_one_or_none()
         
         if not activity:
-            activity = MyActivity()
+            activity = MyActivity(
+                is_online=True,
+                last_active=datetime.utcnow()
+            )
             db.add(activity)
-        
-        activity.last_active = datetime.utcnow()
-        activity.is_online = True
-        activity.inactive_minutes = 0
+        else:
+            activity.last_active = datetime.utcnow()
+            activity.is_online = True
         
         await db.commit()
         
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error sending heartbeat: {e}")
-        return {"status": "error"}
+        raise HTTPException(status_code=500, detail=f"Error sending heartbeat: {str(e)}")
 
 @app.get("/health")
 async def health_check():
