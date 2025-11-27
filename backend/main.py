@@ -36,6 +36,15 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is required")
 
+# === NUEVAS VARIABLES CONFIGURABLES ===
+WHATSAPP_REMOTE_JID = os.getenv("WHATSAPP_REMOTE_JID_TEMPLATE")  # Ej: 573183038190:24@s.whatsapp.net
+if not WHATSAPP_REMOTE_JID:
+    raise RuntimeError("WHATSAPP_REMOTE_JID_TEMPLATE environment variable is required")
+
+WHATSAPP_SENDER_JID = os.getenv("WHATSAPP_SENDER_JID")  # Ej: 573173012598@s.whatsapp.net
+if not WHATSAPP_SENDER_JID:
+    raise RuntimeError("WHATSAPP_SENDER_JID environment variable is required")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days
 
@@ -132,9 +141,6 @@ async def get_current_user(
 # Routes
 @app.post("/token", response_model=TokenResponse)
 async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
-    """
-    Authenticate user against PostgreSQL database and return JWT token.
-    """
     result = await db.execute(
         select(User).where(User.username == credentials.username)
     )
@@ -157,9 +163,6 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
 
 @app.post("/register", response_model=UserResponse)
 async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
-    """
-    Register a new user in the system.
-    """
     result = await db.execute(
         select(User).where(
             (User.username == user_data.username) | (User.email == user_data.email)
@@ -188,16 +191,15 @@ async def send_message(
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Send message to AxIA (text or audio) in Evolution API format."""
     session_id = str(uuid.uuid4())
     
     payload = {
         "event": "messages.upsert",
         "instance": "AxIAPersonal",
-        "channel": "app",  # Identifies this is from the app
+        "channel": "app",
         "data": {
             "key": {
-                "remoteJid": f"app:{current_user}@axia.app",
+                "remoteJid": WHATSAPP_REMOTE_JID,  # Ahora configurable
                 "fromMe": False,
                 "id": session_id
             },
@@ -211,12 +213,12 @@ async def send_message(
         },
         "destination": N8N_WEBHOOK_URL,
         "date_time": datetime.utcnow().isoformat(),
-        "sender": f"{current_user}@axia.app"
+        "sender": WHATSAPP_SENDER_JID  # Ahora configurable
     }
     
-    if payload["data"]["message"]["conversation"] is None:
+    if payload["data"]["message"].get("conversation") is None:
         del payload["data"]["message"]["conversation"]
-    if payload["data"]["message"]["base64"] is None:
+    if payload["data"]["message"].get("base64") is None:
         del payload["data"]["message"]["base64"]
     
     if current_user not in messages_db:
@@ -261,10 +263,6 @@ async def send_message(
 
 @app.websocket("/ws/{username}")
 async def websocket_endpoint(websocket: WebSocket, username: str, token: str = None):
-    """
-    WebSocket endpoint for real-time chat with n8n integration.
-    Adapts Flutter messages to n8n webhook format (Evolution API style).
-    """
     if not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -311,10 +309,10 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
             n8n_payload = {
                 "event": event,
                 "instance": message_data.get('instance', 'AxIAPersonal'),
-                "channel": "app",  # Identifies this is from the app
+                "channel": "app",
                 "data": {
                     "key": {
-                        "remoteJid": f"app:{username}@axia.app",
+                        "remoteJid": WHATSAPP_REMOTE_JID,  # Configurable
                         "fromMe": False,
                         "id": session_id
                     },
@@ -330,12 +328,12 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
                 },
                 "destination": N8N_WEBHOOK_URL,
                 "date_time": datetime.utcnow().isoformat(),
-                "sender": f"{username}@axia.app"
+                "sender": WHATSAPP_SENDER_JID  # Configurable
             }
             
-            if n8n_payload["data"]["message"]["conversation"] is None:
+            if n8n_payload["data"]["message"].get("conversation") is None:
                 del n8n_payload["data"]["message"]["conversation"]
-            if n8n_payload["data"]["message"]["base64"] is None:
+            if n8n_payload["data"]["message"].get("base64") is None:
                 del n8n_payload["data"]["message"]["base64"]
             
             logger.info(f"Sending to n8n: {json.dumps(n8n_payload, indent=2)}")
@@ -398,7 +396,6 @@ async def get_calendar_events(
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> List[CalendarEvent]:
-    """Get user's calendar events."""
     return [
         CalendarEvent(
             id="1",
@@ -414,7 +411,6 @@ async def get_tasks(
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> List[Task]:
-    """Get user's tasks."""
     return [
         Task(id="1", title="Completar documentación", completed=False),
         Task(id="2", title="Revisar código", completed=True),
@@ -426,7 +422,6 @@ async def create_task(
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> Task:
-    """Create a new task."""
     task.id = str(uuid.uuid4())
     return task
 
@@ -436,12 +431,10 @@ async def get_message_history(
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get message history."""
     return messages_db.get(current_user, [])
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":
