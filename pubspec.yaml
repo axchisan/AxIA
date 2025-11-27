@@ -20,6 +20,7 @@ dependencies:
   smooth_page_indicator: ^1.2.1
   # Chat & Messaging
   intl: ^0.20.2
+  web_socket_channel: ^2.4.0
   # Voice & Audio
   speech_to_text: ^7.3.0
   flutter_tts: ^4.2.3
@@ -35,7 +36,6 @@ dependencies:
   material_design_icons_flutter: ^7.0.7296
   flutter_sound: ^9.29.14
   flutter_secure_storage: ^9.2.2
-  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   flutter_test:

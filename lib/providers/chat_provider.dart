@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/chat_message.dart';
 import '../config/api_config.dart';
@@ -13,6 +14,7 @@ class ChatProvider extends ChangeNotifier {
   String? _error;
   String? _currentSessionId;
   String? _currentUsername;
+  SharedPreferences? _prefs;
 
   List<ChatMessage> get messages => _messages;
   bool get isConnected => _isConnected;
@@ -20,7 +22,43 @@ class ChatProvider extends ChangeNotifier {
   String? get error => _error;
 
   ChatProvider() {
-    _loadMockData();
+    _initStorage();
+  }
+
+  Future<void> _initStorage() async {
+    _prefs = await SharedPreferences.getInstance();
+    await _loadMessagesFromStorage();
+  }
+
+  Future<void> _loadMessagesFromStorage() async {
+    if (_prefs == null) return;
+    
+    final messagesJson = _prefs!.getString('chat_messages');
+    if (messagesJson != null) {
+      try {
+        final List<dynamic> decoded = jsonDecode(messagesJson);
+        _messages = decoded.map((json) => ChatMessage.fromJson(json)).toList();
+        notifyListeners();
+      } catch (e) {
+        print('Error loading messages: $e');
+        _loadMockData();
+      }
+    } else {
+      _loadMockData();
+    }
+  }
+
+  Future<void> _saveMessagesToStorage() async {
+    if (_prefs == null) return;
+    
+    try {
+      final messagesJson = jsonEncode(
+        _messages.map((msg) => msg.toJson()).toList(),
+      );
+      await _prefs!.setString('chat_messages', messagesJson);
+    } catch (e) {
+      print('Error saving messages: $e');
+    }
   }
 
   void _loadMockData() {
@@ -31,19 +69,8 @@ class ChatProvider extends ChangeNotifier {
         sender: MessageSender.axia,
         timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
       ),
-      ChatMessage(
-        id: '2',
-        content: 'Hola AxIA, necesito recordar mi sesión de karate a las 6pm',
-        sender: MessageSender.user,
-        timestamp: DateTime.now().subtract(const Duration(minutes: 4)),
-      ),
-      ChatMessage(
-        id: '3',
-        content: 'Listo, he anotado tu sesión de karate para las 6 PM. ¿Algo más?',
-        sender: MessageSender.axia,
-        timestamp: DateTime.now().subtract(const Duration(minutes: 3)),
-      ),
     ];
+    _saveMessagesToStorage();
     notifyListeners();
   }
 
@@ -66,8 +93,9 @@ class ChatProvider extends ChangeNotifier {
 
       _currentUsername = currentUser;
 
-      // Construct WebSocket URL with authentication
       final wsUrl = '${ApiConfig.wsUrl}/$currentUser?token=$token';
+      
+      print('[ChatProvider] Connecting to WebSocket: $wsUrl');
 
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 
@@ -79,21 +107,25 @@ class ChatProvider extends ChangeNotifier {
         onError: (error) {
           _error = 'WebSocket error: $error';
           _isConnected = false;
+          print('[ChatProvider] WebSocket error: $error');
           notifyListeners();
         },
         onDone: () {
           _isConnected = false;
+          print('[ChatProvider] WebSocket connection closed');
           notifyListeners();
         },
       );
 
       _isConnected = true;
       _isLoading = false;
+      print('[ChatProvider] WebSocket connected successfully');
       notifyListeners();
     } catch (e) {
       _error = 'Failed to connect: $e';
       _isConnected = false;
       _isLoading = false;
+      print('[ChatProvider] Connection error: $e');
       notifyListeners();
     }
   }
@@ -111,10 +143,11 @@ class ChatProvider extends ChangeNotifier {
         sender: MessageSender.axia,
         timestamp: DateTime.now(),
         isVoice: isVoiceResponse,
-        audioUrl: data['audio_url'], // If n8n returns audio URL
+        audioUrl: data['audio_url'],
       );
 
       _messages.add(axiaMessage);
+      _saveMessagesToStorage();
       notifyListeners();
     } catch (e) {
       print('Error parsing message: $e');
@@ -123,6 +156,7 @@ class ChatProvider extends ChangeNotifier {
 
   void addMessage(ChatMessage message) {
     _messages.add(message);
+    _saveMessagesToStorage();
     notifyListeners();
   }
 
@@ -140,15 +174,16 @@ class ChatProvider extends ChangeNotifier {
       timestamp: DateTime.now(),
     );
     _messages.add(userMessage);
+    _saveMessagesToStorage();
     _currentSessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
-    // This matches the n8n workflow expectations
     final payload = jsonEncode({
       'event': 'messages.upsert',
       'instance': 'AxIAPersonal',
+      'channel': ApiConfig.appChannel,
       'data': {
         'key': {
-          'remoteJid': '${_currentUsername}@app.axia.net',
+          'remoteJid': 'app:${_currentUsername}@axia.app',
           'fromMe': false,
           'id': _currentSessionId,
         },
@@ -158,16 +193,19 @@ class ChatProvider extends ChangeNotifier {
         },
         'messageType': 'conversation',
         'messageTimestamp': (DateTime.now().millisecondsSinceEpoch ~/ 1000),
+        'source': 'flutter_app',
       },
       'destination': ApiConfig.n8nWebhookUrl,
       'date_time': DateTime.now().toIso8601String(),
-      'sender': '${_currentUsername}@app.axia.net',
+      'sender': '${_currentUsername}@axia.app',
     });
 
     try {
       _channel!.sink.add(payload);
+      print('[ChatProvider] Message sent: $content');
     } catch (e) {
       _error = 'Failed to send message: $e';
+      print('[ChatProvider] Send error: $e');
     }
 
     notifyListeners();
@@ -188,14 +226,16 @@ class ChatProvider extends ChangeNotifier {
       isVoice: true,
     );
     _messages.add(userMessage);
+    _saveMessagesToStorage();
     _currentSessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
     final payload = jsonEncode({
       'event': 'messages.upsert',
       'instance': 'AxIAPersonal',
+      'channel': ApiConfig.appChannel,
       'data': {
         'key': {
-          'remoteJid': '${_currentUsername}@app.axia.net',
+          'remoteJid': 'app:${_currentUsername}@axia.app',
           'fromMe': false,
           'id': _currentSessionId,
         },
@@ -205,18 +245,28 @@ class ChatProvider extends ChangeNotifier {
         },
         'messageType': 'audioMessage',
         'messageTimestamp': (DateTime.now().millisecondsSinceEpoch ~/ 1000),
+        'source': 'flutter_app',
       },
       'destination': ApiConfig.n8nWebhookUrl,
       'date_time': DateTime.now().toIso8601String(),
-      'sender': '${_currentUsername}@app.axia.net',
+      'sender': '${_currentUsername}@axia.app',
     });
 
     try {
       _channel!.sink.add(payload);
+      print('[ChatProvider] Audio message sent');
     } catch (e) {
       _error = 'Failed to send audio: $e';
+      print('[ChatProvider] Audio send error: $e');
     }
 
+    notifyListeners();
+  }
+
+  Future<void> clearMessages() async {
+    _messages.clear();
+    await _prefs?.remove('chat_messages');
+    _loadMockData();
     notifyListeners();
   }
 

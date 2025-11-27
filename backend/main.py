@@ -188,17 +188,36 @@ async def send_message(
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Send message to AxIA (text or audio)."""
+    """Send message to AxIA (text or audio) in Evolution API format."""
     session_id = str(uuid.uuid4())
     
     payload = {
-        "session_id": session_id,
-        "user": current_user,
-        "timestamp": datetime.utcnow().isoformat(),
-        "type": request.type,
-        "text": request.text,
-        "audio_base64": request.audio_base64
+        "event": "messages.upsert",
+        "instance": "AxIAPersonal",
+        "channel": "app",  # Identifies this is from the app
+        "data": {
+            "key": {
+                "remoteJid": f"app:{current_user}@axia.app",
+                "fromMe": False,
+                "id": session_id
+            },
+            "pushName": current_user,
+            "message": {
+                "conversation": request.text if request.type == "text" else None,
+                "base64": request.audio_base64 if request.type == "audio" else None
+            },
+            "messageType": request.type if request.type == "audio" else "conversation",
+            "messageTimestamp": int(datetime.utcnow().timestamp())
+        },
+        "destination": N8N_WEBHOOK_URL,
+        "date_time": datetime.utcnow().isoformat(),
+        "sender": f"{current_user}@axia.app"
     }
+    
+    if payload["data"]["message"]["conversation"] is None:
+        del payload["data"]["message"]["conversation"]
+    if payload["data"]["message"]["base64"] is None:
+        del payload["data"]["message"]["base64"]
     
     if current_user not in messages_db:
         messages_db[current_user] = []
@@ -214,22 +233,28 @@ async def send_message(
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(N8N_WEBHOOK_URL, json=payload) as response:
-                result = await response.json()
-                
-                messages_db[current_user].append({
-                    "session_id": session_id,
-                    "role": "assistant",
-                    "content": result.get("output", ""),
-                    "type": result.get("type", "text"),
-                    "timestamp": datetime.utcnow().isoformat()
-                })
-                
-                return {
-                    "session_id": session_id,
-                    "output": result.get("output", ""),
-                    "type": result.get("type", "text"),
-                    "timestamp": datetime.utcnow().isoformat()
-                }
+                if response.status == 200:
+                    result = await response.json()
+                    
+                    messages_db[current_user].append({
+                        "session_id": session_id,
+                        "role": "assistant",
+                        "content": result.get("output", ""),
+                        "type": result.get("type", "text"),
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                    
+                    return {
+                        "session_id": session_id,
+                        "output": result.get("output", ""),
+                        "type": result.get("type", "text"),
+                        "debe_ser_audio": result.get("debe_ser_audio", False),
+                        "audio_url": result.get("audio_url"),
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                else:
+                    logger.error(f"n8n returned status: {response.status}")
+                    raise HTTPException(status_code=500, detail="Error from n8n workflow")
     except Exception as e:
         logger.error(f"Error calling n8n: {str(e)}")
         raise HTTPException(status_code=500, detail="Error processing message")
@@ -265,13 +290,11 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
             event = message_data.get('event', 'messages.upsert')
             data_payload = message_data.get('data', {})
             
-            # Extract message details
             key_info = data_payload.get('key', {})
             session_id = key_info.get('id', str(uuid.uuid4()))
             message_content = data_payload.get('message', {})
             message_type = data_payload.get('messageType', 'conversation')
             
-            # Get the actual message text or audio
             if message_type == 'conversation':
                 final_message = message_content.get('conversation', '')
                 msg_type = 'text'
@@ -288,9 +311,10 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
             n8n_payload = {
                 "event": event,
                 "instance": message_data.get('instance', 'AxIAPersonal'),
+                "channel": "app",  # Identifies this is from the app
                 "data": {
                     "key": {
-                        "remoteJid": f"{username}@app.axia.net",
+                        "remoteJid": f"app:{username}@axia.app",
                         "fromMe": False,
                         "id": session_id
                     },
@@ -300,14 +324,15 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
                         "base64": audio_base64 if msg_type == 'audio' else None
                     },
                     "messageType": message_type,
-                    "messageTimestamp": int(datetime.utcnow().timestamp())
+                    "messageTimestamp": int(datetime.utcnow().timestamp()),
+                    "instanceId": message_data.get('instanceId', str(uuid.uuid4())),
+                    "source": "flutter_app"
                 },
-                "destination": message_data.get('destination', N8N_WEBHOOK_URL),
+                "destination": N8N_WEBHOOK_URL,
                 "date_time": datetime.utcnow().isoformat(),
-                "sender": f"{username}@app.axia.net"
+                "sender": f"{username}@axia.app"
             }
             
-            # Remove None values
             if n8n_payload["data"]["message"]["conversation"] is None:
                 del n8n_payload["data"]["message"]["conversation"]
             if n8n_payload["data"]["message"]["base64"] is None:
@@ -319,7 +344,6 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
                 async with aiohttp.ClientSession() as session:
                     async with session.post(N8N_WEBHOOK_URL, json=n8n_payload) as resp:
                         if resp.status == 200:
-                            # Try to parse n8n response
                             try:
                                 result = await resp.json()
                                 
@@ -340,7 +364,6 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
                                 await websocket.send_json(response_msg)
                                 logger.info(f"Response sent to Flutter: {response_msg}")
                             except Exception as json_error:
-                                # If n8n doesn't return JSON, send text response
                                 text_resp = await resp.text()
                                 await websocket.send_json({
                                     "session_id": session_id,
