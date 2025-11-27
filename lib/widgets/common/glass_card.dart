@@ -5,6 +5,7 @@ import '../../config/theme/app_colors.dart';
 class GlassCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
+  final EdgeInsets? margin;
   final double blur;
   final BorderRadius? borderRadius;
   final VoidCallback? onTap;
@@ -15,6 +16,7 @@ class GlassCard extends StatelessWidget {
     Key? key,
     required this.child,
     this.padding = const EdgeInsets.all(16),
+    this.margin,
     this.blur = 10,
     this.borderRadius,
     this.onTap,
@@ -24,25 +26,36 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipRRect(
-        borderRadius: borderRadius ?? BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: Container(
-            decoration: BoxDecoration(
-              color: backgroundColor ?? AppColors.glassDark,
-              borderRadius: borderRadius ?? BorderRadius.circular(16),
-              border: border ?? Border.all(
-                color: AppColors.neonPurple.withOpacity(0.2),
-              ),
+    final cardWidget = ClipRRect(
+      borderRadius: borderRadius ?? BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: Container(
+          decoration: BoxDecoration(
+            color: backgroundColor ?? AppColors.glassDark,
+            borderRadius: borderRadius ?? BorderRadius.circular(16),
+            border: border ?? Border.all(
+              color: AppColors.neonPurple.withOpacity(0.2),
             ),
-            padding: padding,
-            child: child,
           ),
+          padding: padding,
+          child: child,
         ),
       ),
     );
+
+    final gestureWidget = GestureDetector(
+      onTap: onTap,
+      child: cardWidget,
+    );
+
+    if (margin != null) {
+      return Padding(
+        padding: margin!,
+        child: gestureWidget,
+      );
+    }
+
+    return gestureWidget;
   }
 }

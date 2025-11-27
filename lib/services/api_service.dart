@@ -1,6 +1,8 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../config/api_config.dart';
+import '../models/calendar_event.dart';
+import '../models/google_task.dart';
 import 'auth_service.dart';
 
 class ApiService {
@@ -15,19 +17,34 @@ class ApiService {
   }
 
   // Get calendar events from FastAPI
-  Future<List<Map<String, dynamic>>> getCalendarEvents() async {
+  Future<List<CalendarEvent>> getCalendarEvents({
+    DateTime? timeMin,
+    DateTime? timeMax,
+  }) async {
     try {
       final headers = await _getHeaders();
+      String url = '${ApiConfig.baseUrl}/calendar/events';
+      
+      final queryParams = <String, String>{};
+      if (timeMin != null) {
+        queryParams['time_min'] = timeMin.toIso8601String();
+      }
+      if (timeMax != null) {
+        queryParams['time_max'] = timeMax.toIso8601String();
+      }
+      
+      if (queryParams.isNotEmpty) {
+        url += '?${Uri(queryParameters: queryParams).query}';
+      }
+      
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.calendarEndpoint}'),
+        Uri.parse(url),
         headers: headers,
       );
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        return List<Map<String, dynamic>>.from(data);
-      } else if (response.statusCode == 401) {
-        throw Exception('Unauthorized');
+        return data.map((json) => CalendarEvent.fromJson(json)).toList();
       } else {
         throw Exception('Failed to load calendar events');
       }
@@ -36,25 +53,132 @@ class ApiService {
     }
   }
 
+  Future<CalendarEvent> createCalendarEvent({
+    required String summary,
+    required DateTime startTime,
+    required DateTime endTime,
+    String? description,
+    String? location,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/calendar/events'),
+        headers: headers,
+        body: jsonEncode({
+          'summary': summary,
+          'start_time': startTime.toIso8601String(),
+          'end_time': endTime.toIso8601String(),
+          'description': description,
+          'location': location,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return CalendarEvent.fromJson(jsonDecode(response.body));
+      } else {
+        throw Exception('Failed to create event');
+      }
+    } catch (e) {
+      throw Exception('Error creating event: $e');
+    }
+  }
+
+  Future<void> deleteCalendarEvent(String eventId) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/calendar/events/$eventId'),
+        headers: headers,
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        throw Exception('Failed to delete event');
+      }
+    } catch (e) {
+      throw Exception('Error deleting event: $e');
+    }
+  }
+
   // Get tasks from FastAPI
-  Future<List<Map<String, dynamic>>> getTasks() async {
+  Future<List<GoogleTask>> getGoogleTasks({bool showCompleted = true}) async {
     try {
       final headers = await _getHeaders();
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.tasksEndpoint}'),
+        Uri.parse('${ApiConfig.baseUrl}/google/tasks?show_completed=$showCompleted'),
         headers: headers,
       );
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        return List<Map<String, dynamic>>.from(data);
-      } else if (response.statusCode == 401) {
-        throw Exception('Unauthorized');
+        return data.map((json) => GoogleTask.fromJson(json)).toList();
       } else {
         throw Exception('Failed to load tasks');
       }
     } catch (e) {
       throw Exception('Error fetching tasks: $e');
+    }
+  }
+
+  Future<GoogleTask> createGoogleTask({
+    required String title,
+    String? notes,
+    DateTime? due,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/google/tasks'),
+        headers: headers,
+        body: jsonEncode({
+          'title': title,
+          'notes': notes,
+          'due': due?.toIso8601String(),
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return GoogleTask.fromJson(jsonDecode(response.body));
+      } else {
+        throw Exception('Failed to create task');
+      }
+    } catch (e) {
+      throw Exception('Error creating task: $e');
+    }
+  }
+
+  Future<void> toggleGoogleTask(String taskId, bool completed) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.patch(
+        Uri.parse('${ApiConfig.baseUrl}/google/tasks/$taskId'),
+        headers: headers,
+        body: jsonEncode({
+          'completed': completed,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to toggle task');
+      }
+    } catch (e) {
+      throw Exception('Error toggling task: $e');
+    }
+  }
+
+  Future<void> deleteGoogleTask(String taskId) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/google/tasks/$taskId'),
+        headers: headers,
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        throw Exception('Failed to delete task');
+      }
+    } catch (e) {
+      throw Exception('Error deleting task: $e');
     }
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme/app_colors.dart';
 import '../../config/theme/app_typography.dart';
@@ -14,7 +15,15 @@ class PresenceScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mi Presencia'),
+        title: const Text('Mi Actividad'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () {
+              Provider.of<PresenceProvider>(context, listen: false).loadPresence();
+            },
+          ),
+        ],
       ),
       body: Consumer<PresenceProvider>(
         builder: (context, presenceProvider, _) {
@@ -25,12 +34,16 @@ class PresenceScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildCurrentStatus(presenceProvider),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
+                _buildActivityTimer(context, presenceProvider),
+                const SizedBox(height: 24),
                 _buildStatusOptions(context, presenceProvider),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
                 _buildCustomMessage(context, presenceProvider),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
                 _buildStatusInfo(),
+                const SizedBox(height: 24),
+                _buildChatbotInfo(),
               ],
             ),
           );
@@ -46,38 +59,178 @@ class PresenceScreen extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 80,
-            height: 80,
+            width: 100,
+            height: 100,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: _getStatusColor(status).withOpacity(0.2),
               border: Border.all(
                 color: _getStatusColor(status),
-                width: 3,
+                width: 4,
               ),
             ),
-            child: Icon(
-              _getStatusIcon(status),
-              size: 40,
-              color: _getStatusColor(status),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(
+                  _getStatusIcon(status),
+                  size: 48,
+                  color: _getStatusColor(status),
+                ),
+                if (provider.isOnline)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: AppColors.statusAvailable,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           Text(
             provider.statusLabel,
             style: AppTypography.h2.copyWith(
               color: AppColors.textDarkPrimary,
+              fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            provider.customMessage.isEmpty
-                ? 'Establece un mensaje de estado'
-                : provider.customMessage,
-            style: AppTypography.body2.copyWith(
-              color: AppColors.textDarkSecondary,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: provider.isOnline
+                  ? AppColors.statusAvailable.withOpacity(0.2)
+                  : AppColors.statusAway.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
             ),
-            textAlign: TextAlign.center,
+            child: Text(
+              provider.isOnline ? 'EN LÍNEA' : 'AUSENTE',
+              style: AppTypography.caption.copyWith(
+                color: provider.isOnline
+                    ? AppColors.statusAvailable
+                    : AppColors.statusAway,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (provider.customMessage.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              provider.customMessage,
+              style: AppTypography.body2.copyWith(
+                color: AppColors.textDarkSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivityTimer(BuildContext context, PresenceProvider provider) {
+    return GlassCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Tiempo de Inactividad',
+                    style: AppTypography.body1.copyWith(
+                      color: AppColors.textDarkPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Controla cuándo AxIA responde por ti',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textDarkSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              Icon(
+                Icons.timer_outlined,
+                color: AppColors.neonPurple,
+                size: 32,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: provider.isOnline
+                  ? AppColors.statusAvailable.withOpacity(0.1)
+                  : AppColors.statusAway.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: provider.isOnline
+                    ? AppColors.statusAvailable.withOpacity(0.3)
+                    : AppColors.statusAway.withOpacity(0.3),
+              ),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  provider.formattedInactiveTime,
+                  style: AppTypography.h1.copyWith(
+                    color: AppColors.textDarkPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 48,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  provider.isOnline ? 'Activo ahora' : 'Inactivo',
+                  style: AppTypography.body2.copyWith(
+                    color: AppColors.textDarkSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: GradientButton(
+                  label: 'Marcar como Online',
+                  onPressed: () {
+                    if (provider.isOnline) return;
+                    provider.markAsOnline();
+                  },
+                  icon: Icons.check_circle_outline_rounded,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _showInactiveTimeDialog(context, provider),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Editar Tiempo'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: BorderSide(color: AppColors.neonPurple),
+                    foregroundColor: AppColors.neonPurple,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -280,6 +433,152 @@ class PresenceScreen extends StatelessWidget {
             )
             .toList(),
       ],
+    );
+  }
+
+  Widget _buildChatbotInfo() {
+    return GlassCard(
+      padding: const EdgeInsets.all(20),
+      backgroundColor: AppColors.neonPurple.withOpacity(0.1),
+      border: Border.all(color: AppColors.neonPurple.withOpacity(0.3)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.smart_toy_outlined,
+                color: AppColors.neonPurple,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Chatbot AxIA',
+                style: AppTypography.body1.copyWith(
+                  color: AppColors.textDarkPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Cuando estás inactivo, el chatbot de AxIA responderá automáticamente a tus mensajes de WhatsApp según tu estado de actividad.',
+            style: AppTypography.body2.copyWith(
+              color: AppColors.textDarkSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.bgDarkSecondary.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.lightbulb_outline_rounded,
+                  size: 20,
+                  color: AppColors.statusFocus,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Tip: Marca como "Online" cuando estés activo para pausar las respuestas automáticas',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textDarkSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showInactiveTimeDialog(BuildContext context, PresenceProvider provider) {
+    final controller = TextEditingController(
+      text: provider.inactiveMinutes.toString(),
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Editar Tiempo de Inactividad'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Ingresa el tiempo de inactividad en minutos:',
+              style: AppTypography.body2,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: 'Minutos',
+                border: const OutlineInputBorder(),
+                suffixText: 'min',
+                hintText: '0',
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      controller.text = '30';
+                    },
+                    child: const Text('30 min'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      controller.text = '60';
+                    },
+                    child: const Text('1 hora'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      controller.text = '120';
+                    },
+                    child: const Text('2 horas'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final minutes = int.tryParse(controller.text) ?? 0;
+              provider.setInactiveTime(minutes);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Tiempo de inactividad actualizado'),
+                ),
+              );
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
     );
   }
 

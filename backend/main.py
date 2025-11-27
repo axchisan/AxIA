@@ -17,6 +17,8 @@ from sqlalchemy.future import select
 
 from database import Base, get_db, init_db, engine
 from models import User, UserCreate, UserResponse, UserLogin, Routine, Note, MyActivity, RoutineCreate, RoutineUpdate, RoutineResponse, NoteCreate, NoteUpdate, NoteResponse, PresenceUpdate, PresenceResponse
+from google_services import google_calendar, google_tasks
+from security import hash_password, verify_password
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING)
@@ -384,92 +386,178 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
 
 @app.get("/calendar/events")
 async def get_calendar_events(
-    current_user: str = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-) -> List[CalendarEvent]:
-    return [
-        CalendarEvent(
-            id="1",
-            title="Reunión con cliente",
-            start_time=(datetime.utcnow() + timedelta(days=1)).isoformat(),
-            end_time=(datetime.utcnow() + timedelta(days=1, hours=1)).isoformat(),
-            description="Discutir propuesta"
-        ),
-    ]
-
-@app.get("/tasks")
-async def get_tasks(
-    current_user: str = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-) -> List[Task]:
-    return [
-        Task(id="1", title="Completar documentación", completed=False),
-        Task(id="2", title="Revisar código", completed=True),
-    ]
-
-@app.post("/tasks")
-async def create_task(
-    task: Task,
-    current_user: str = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-) -> Task:
-    task.id = str(uuid.uuid4())
-    return task
-
-@app.get("/messages/{session_id}")
-async def get_message_history(
-    session_id: str,
+    time_min: Optional[str] = None,
+    time_max: Optional[str] = None,
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    return messages_db.get(current_user, [])
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
-
-@app.post("/app-message")
-async def receive_app_message(request: Request):
+    """Get events from Google Calendar"""
     try:
-        data = await request.json()
+        time_min_dt = datetime.fromisoformat(time_min) if time_min else None
+        time_max_dt = datetime.fromisoformat(time_max) if time_max else None
         
-        username = data.get('username')
-        if not username:
-            raise HTTPException(status_code=400, detail="username is required")
-        
-        user_connections = active_connections.get(username, [])
-        
-        if not user_connections:
-            return {"status": "no_active_connections", "username": username}
-        
-        response_msg = {
-            "session_id": data.get('session_id', str(uuid.uuid4())),
-            "output": data.get('output', ''),
-            "type": data.get('type', 'text'),
-            "debe_ser_audio": data.get('debe_ser_audio', False),
-            "audio_url": data.get('audio_url'),
-            "audio_base64": data.get('audio_base64'),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-        disconnected = []
-        for ws in user_connections:
-            try:
-                await ws.send_json(response_msg)
-            except Exception:
-                disconnected.append(ws)
-        
-        for ws in disconnected:
-            user_connections.remove(ws)
-        
-        return {
-            "status": "success",
-            "username": username,
-            "connections_notified": len(user_connections)
-        }
-        
+        events = await google_calendar.get_events(time_min_dt, time_max_dt)
+        return events
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching calendar events: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching calendar events")
+
+@app.post("/calendar/events")
+async def create_calendar_event(
+    summary: str,
+    start_time: str,
+    end_time: str,
+    description: Optional[str] = None,
+    location: Optional[str] = None,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new event in Google Calendar"""
+    try:
+        start_dt = datetime.fromisoformat(start_time)
+        end_dt = datetime.fromisoformat(end_time)
+        
+        event = await google_calendar.create_event(
+            summary=summary,
+            start=start_dt,
+            end=end_dt,
+            description=description,
+            location=location
+        )
+        
+        if not event:
+            raise HTTPException(status_code=500, detail="Failed to create event")
+        
+        return event
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid datetime format: {e}")
+    except Exception as e:
+        logger.error(f"Error creating calendar event: {e}")
+        raise HTTPException(status_code=500, detail="Error creating calendar event")
+
+@app.patch("/calendar/events/{event_id}")
+async def update_calendar_event(
+    event_id: str,
+    updates: Dict,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a calendar event"""
+    try:
+        event = await google_calendar.update_event(event_id, updates)
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found or update failed")
+        return event
+    except Exception as e:
+        logger.error(f"Error updating calendar event: {e}")
+        raise HTTPException(status_code=500, detail="Error updating calendar event")
+
+@app.delete("/calendar/events/{event_id}")
+async def delete_calendar_event(
+    event_id: str,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a calendar event"""
+    try:
+        success = await google_calendar.delete_event(event_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Event not found or delete failed")
+        return {"status": "success", "message": "Event deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting calendar event: {e}")
+        raise HTTPException(status_code=500, detail="Error deleting calendar event")
+
+@app.get("/google/tasks")
+async def get_google_tasks(
+    show_completed: bool = True,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get tasks from Google Tasks"""
+    try:
+        tasks = await google_tasks.get_tasks(show_completed)
+        return tasks
+    except Exception as e:
+        logger.error(f"Error fetching Google tasks: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching tasks")
+
+@app.post("/google/tasks")
+async def create_google_task(
+    title: str,
+    notes: Optional[str] = None,
+    due: Optional[str] = None,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new task in Google Tasks"""
+    try:
+        due_dt = datetime.fromisoformat(due) if due else None
+        
+        task = await google_tasks.create_task(
+            title=title,
+            notes=notes,
+            due=due_dt
+        )
+        
+        if not task:
+            raise HTTPException(status_code=500, detail="Failed to create task")
+        
+        return task
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid datetime format: {e}")
+    except Exception as e:
+        logger.error(f"Error creating Google task: {e}")
+        raise HTTPException(status_code=500, detail="Error creating task")
+
+@app.patch("/google/tasks/{task_id}")
+async def update_google_task(
+    task_id: str,
+    updates: Dict,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a Google task"""
+    try:
+        task = await google_tasks.update_task(task_id, updates)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found or update failed")
+        return task
+    except Exception as e:
+        logger.error(f"Error updating Google task: {e}")
+        raise HTTPException(status_code=500, detail="Error updating task")
+
+@app.post("/google/tasks/{task_id}/complete")
+async def complete_google_task(
+    task_id: str,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Mark a Google task as completed"""
+    try:
+        task = await google_tasks.complete_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return task
+    except Exception as e:
+        logger.error(f"Error completing Google task: {e}")
+        raise HTTPException(status_code=500, detail="Error completing task")
+
+@app.delete("/google/tasks/{task_id}")
+async def delete_google_task(
+    task_id: str,
+    current_user: str = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a Google task"""
+    try:
+        success = await google_tasks.delete_task(task_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Task not found or delete failed")
+        return {"status": "success", "message": "Task deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting Google task: {e}")
+        raise HTTPException(status_code=500, detail="Error deleting task")
 
 @app.get("/routines", response_model=List[RoutineResponse])
 async def get_routines(
@@ -691,31 +779,40 @@ async def get_presence(
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(
-        select(MyActivity).where(MyActivity.id == 1)
-    )
-    activity = result.scalar_one_or_none()
-    
-    if not activity:
-        activity = MyActivity(id=1, is_online=False, status='available')
-        db.add(activity)
-        await db.commit()
-        await db.refresh(activity)
-    
-    # Calculate inactive minutes
-    if activity.last_active:
-        inactive_time = datetime.utcnow() - activity.last_active
-        inactive_minutes = int(inactive_time.total_seconds() / 60)
-    else:
-        inactive_minutes = 0
-    
-    return PresenceResponse(
-        is_online=activity.is_online,
-        status=activity.status,
-        custom_message=activity.custom_message,
-        last_active=activity.last_active or datetime.utcnow(),
-        inactive_minutes=inactive_minutes
-    )
+    """Get current presence/activity status"""
+    try:
+        result = await db.execute(
+            select(MyActivity).order_by(MyActivity.id.desc()).limit(1)
+        )
+        activity = result.scalar_one_or_none()
+        
+        if not activity:
+            # Create default activity
+            activity = MyActivity(
+                is_online=False,
+                status='available',
+                inactive_minutes=0
+            )
+            db.add(activity)
+            await db.commit()
+            await db.refresh(activity)
+        
+        # Calculate inactive minutes
+        if activity.last_active:
+            now = datetime.utcnow()
+            delta = now - activity.last_active
+            activity.inactive_minutes = int(delta.total_seconds() / 60)
+        
+        return PresenceResponse(
+            is_online=activity.is_online,
+            status=activity.status or 'available',
+            custom_message=activity.custom_message,
+            last_active=activity.last_active,
+            inactive_minutes=activity.inactive_minutes
+        )
+    except Exception as e:
+        logger.error(f"Error fetching presence: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching presence")
 
 @app.post("/presence/update")
 async def update_presence(
@@ -723,47 +820,105 @@ async def update_presence(
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(
-        select(MyActivity).where(MyActivity.id == 1)
-    )
-    activity = result.scalar_one_or_none()
-    
-    if not activity:
-        activity = MyActivity(id=1)
-        db.add(activity)
-    
-    activity.status = presence_data.status
-    activity.custom_message = presence_data.custom_message
-    activity.last_active = datetime.utcnow()
-    activity.is_online = True
-    activity.inactive_minutes = 0
-    
-    await db.commit()
-    await db.refresh(activity)
-    
-    return {"status": "updated", "current_status": activity.status}
+    """Update presence/activity status"""
+    try:
+        result = await db.execute(
+            select(MyActivity).order_by(MyActivity.id.desc()).limit(1)
+        )
+        activity = result.scalar_one_or_none()
+        
+        if not activity:
+            activity = MyActivity()
+            db.add(activity)
+        
+        # Update fields
+        activity.status = presence_data.status
+        activity.custom_message = presence_data.custom_message
+        activity.last_active = datetime.utcnow()
+        activity.is_online = True
+        activity.inactive_minutes = 0
+        
+        await db.commit()
+        await db.refresh(activity)
+        
+        return {"status": "success", "message": "Presence updated"}
+    except Exception as e:
+        logger.error(f"Error updating presence: {e}")
+        raise HTTPException(status_code=500, detail="Error updating presence")
 
 @app.post("/presence/heartbeat")
 async def presence_heartbeat(
     current_user: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(
-        select(MyActivity).where(MyActivity.id == 1)
-    )
-    activity = result.scalar_one_or_none()
-    
-    if not activity:
-        activity = MyActivity(id=1, is_online=True)
-        db.add(activity)
-    
-    activity.last_active = datetime.utcnow()
-    activity.is_online = True
-    activity.inactive_minutes = 0
-    
-    await db.commit()
-    
-    return {"status": "ok", "last_active": activity.last_active.isoformat()}
+    """Send presence heartbeat to indicate online status"""
+    try:
+        result = await db.execute(
+            select(MyActivity).order_by(MyActivity.id.desc()).limit(1)
+        )
+        activity = result.scalar_one_or_none()
+        
+        if not activity:
+            activity = MyActivity()
+            db.add(activity)
+        
+        activity.last_active = datetime.utcnow()
+        activity.is_online = True
+        activity.inactive_minutes = 0
+        
+        await db.commit()
+        
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error sending heartbeat: {e}")
+        return {"status": "error"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+@app.post("/app-message")
+async def receive_app_message(request: Request):
+    try:
+        data = await request.json()
+        
+        username = data.get('username')
+        if not username:
+            raise HTTPException(status_code=400, detail="username is required")
+        
+        user_connections = active_connections.get(username, [])
+        
+        if not user_connections:
+            return {"status": "no_active_connections", "username": username}
+        
+        response_msg = {
+            "session_id": data.get('session_id', str(uuid.uuid4())),
+            "output": data.get('output', ''),
+            "type": data.get('type', 'text'),
+            "debe_ser_audio": data.get('debe_ser_audio', False),
+            "audio_url": data.get('audio_url'),
+            "audio_base64": data.get('audio_base64'),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        disconnected = []
+        for ws in user_connections:
+            try:
+                await ws.send_json(response_msg)
+            except Exception:
+                disconnected.append(ws)
+        
+        for ws in disconnected:
+            user_connections.remove(ws)
+        
+        return {
+            "status": "success",
+            "username": username,
+            "connections_notified": len(user_connections)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

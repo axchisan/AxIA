@@ -158,6 +158,38 @@ class RoutineProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> updateRoutine(String routineId, Routine updatedRoutine) async {
+    final index = _routines.indexWhere((r) => r.id == routineId);
+    if (index != -1) {
+      final oldRoutine = _routines[index];
+      
+      // Optimistic update
+      _routines[index] = updatedRoutine;
+      notifyListeners();
+      
+      try {
+        await _apiService.updateRoutine(
+          int.parse(routineId),
+          {
+            'name': updatedRoutine.name,
+            'description': updatedRoutine.description,
+            'icon': updatedRoutine.icon,
+            'duration_minutes': updatedRoutine.duration.inMinutes,
+            'category': updatedRoutine.category,
+            'is_completed': updatedRoutine.isCompleted,
+            'streak': updatedRoutine.streak,
+          },
+        );
+      } catch (e) {
+        // Revert on error
+        _routines[index] = oldRoutine;
+        _error = 'Failed to update routine';
+        notifyListeners();
+        rethrow;
+      }
+    }
+  }
+
   Future<void> deleteRoutine(String routineId) async {
     final index = _routines.indexWhere((r) => r.id == routineId);
     if (index != -1) {
