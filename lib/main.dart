@@ -58,8 +58,8 @@ class AxiaApp extends StatelessWidget {
           themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: const SplashScreen(),
           routes: {
-            '/': (context) => const MainNavigation(),
             '/login': (context) => const LoginScreen(),
+            '/home': (context) => const MainNavigation(),
             '/splash': (context) => const SplashScreen(),
           },
         );

@@ -84,27 +84,31 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           ],
         ),
       ),
-      child: AnimatedBuilder(
-        animation: _animationController,
-        builder: (context, child) {
-          return Positioned(
-            top: -100 + (_animationController.value * 50),
-            right: -100 + (_animationController.value * 50),
-            child: Container(
-              width: 300,
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    AppColors.neonPurple.withOpacity(0.1),
-                    Colors.transparent,
-                  ],
+      child: Stack(
+        children: [
+          AnimatedBuilder(
+            animation: _animationController,
+            builder: (context, child) {
+              return Positioned(
+                top: -100 + (_animationController.value * 50),
+                right: -100 + (_animationController.value * 50),
+                child: Container(
+                  width: 300,
+                  height: 300,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        AppColors.neonPurple.withOpacity(0.1),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ],
       ),
     );
   }

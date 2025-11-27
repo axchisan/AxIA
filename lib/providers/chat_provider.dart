@@ -12,6 +12,7 @@ class ChatProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   String? _currentSessionId;
+  String? _currentUsername;
 
   List<ChatMessage> get messages => _messages;
   bool get isConnected => _isConnected;
@@ -26,7 +27,7 @@ class ChatProvider extends ChangeNotifier {
     _messages = [
       ChatMessage(
         id: '1',
-        content: '¡Hola Duvan! Soy AxIA. ¿Cómo puedo ayudarte hoy?',
+        content: '¡Hola! Soy AxIA. ¿Cómo puedo ayudarte hoy?',
         sender: MessageSender.axia,
         timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
       ),
@@ -63,6 +64,8 @@ class ChatProvider extends ChangeNotifier {
         return;
       }
 
+      _currentUsername = currentUser;
+
       // Construct WebSocket URL with authentication
       final wsUrl = '${ApiConfig.wsUrl}/$currentUser?token=$token';
 
@@ -98,12 +101,17 @@ class ChatProvider extends ChangeNotifier {
   void _handleIncomingMessage(dynamic message) {
     try {
       final data = jsonDecode(message);
+      
+      String content = data['output'] ?? '';
+      bool isVoiceResponse = data['type'] == 'audio' || data['debe_ser_audio'] == true;
+      
       final axiaMessage = ChatMessage(
         id: data['session_id'] ?? DateTime.now().toString(),
-        content: data['output'] ?? '',
+        content: content,
         sender: MessageSender.axia,
         timestamp: DateTime.now(),
-        isVoice: data['type'] == 'audio',
+        isVoice: isVoiceResponse,
+        audioUrl: data['audio_url'], // If n8n returns audio URL
       );
 
       _messages.add(axiaMessage);
@@ -132,14 +140,28 @@ class ChatProvider extends ChangeNotifier {
       timestamp: DateTime.now(),
     );
     _messages.add(userMessage);
-    _currentSessionId = DateTime.now().toString();
+    _currentSessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
-    // Send through WebSocket
+    // This matches the n8n workflow expectations
     final payload = jsonEncode({
-      'type': 'text',
-      'text': content,
-      'session_id': _currentSessionId,
-      'timestamp': DateTime.now().toIso8601String(),
+      'event': 'messages.upsert',
+      'instance': 'AxIAPersonal',
+      'data': {
+        'key': {
+          'remoteJid': '${_currentUsername}@app.axia.net',
+          'fromMe': false,
+          'id': _currentSessionId,
+        },
+        'pushName': _currentUsername,
+        'message': {
+          'conversation': content,
+        },
+        'messageType': 'conversation',
+        'messageTimestamp': (DateTime.now().millisecondsSinceEpoch ~/ 1000),
+      },
+      'destination': ApiConfig.n8nWebhookUrl,
+      'date_time': DateTime.now().toIso8601String(),
+      'sender': '${_currentUsername}@app.axia.net',
     });
 
     try {
@@ -166,12 +188,27 @@ class ChatProvider extends ChangeNotifier {
       isVoice: true,
     );
     _messages.add(userMessage);
+    _currentSessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
     final payload = jsonEncode({
-      'type': 'audio',
-      'audio_base64': audioBase64,
-      'session_id': DateTime.now().toString(),
-      'timestamp': DateTime.now().toIso8601String(),
+      'event': 'messages.upsert',
+      'instance': 'AxIAPersonal',
+      'data': {
+        'key': {
+          'remoteJid': '${_currentUsername}@app.axia.net',
+          'fromMe': false,
+          'id': _currentSessionId,
+        },
+        'pushName': _currentUsername,
+        'message': {
+          'base64': audioBase64,
+        },
+        'messageType': 'audioMessage',
+        'messageTimestamp': (DateTime.now().millisecondsSinceEpoch ~/ 1000),
+      },
+      'destination': ApiConfig.n8nWebhookUrl,
+      'date_time': DateTime.now().toIso8601String(),
+      'sender': '${_currentUsername}@app.axia.net',
     });
 
     try {

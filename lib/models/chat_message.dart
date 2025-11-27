@@ -9,6 +9,7 @@ class ChatMessage {
   final MessageSender sender;
   final DateTime timestamp;
   final bool isVoice;
+  final String? audioUrl;
 
   ChatMessage({
     required this.id,
@@ -16,5 +17,6 @@ class ChatMessage {
     required this.sender,
     required this.timestamp,
     this.isVoice = false,
+    this.audioUrl,
   });
 }

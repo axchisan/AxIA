@@ -2,6 +2,8 @@ class ApiConfig {
   static const String baseUrl = 'https://apiaxia.axchisan.com';
   static const String wsUrl = 'wss://apiaxia.axchisan.com/ws';
   
+  static const String n8nWebhookUrl = 'https://n8n.axchisan.com/webhook/15f68f4b-70e3-48eb-ae7d-d36d0a630118';
+  
   // Local development
   // static const String baseUrl = 'http://localhost:8000';
   // static const String wsUrl = 'ws://localhost:8000/ws';

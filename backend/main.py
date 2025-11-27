@@ -63,7 +63,7 @@ active_connections: Dict[str, List] = {}
 async def startup():
     try:
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)  # ← Esto crea las tablas si no existen
+            await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables ensured (created if not exist)")
     except Exception as e:
         logger.error(f"Database connection failed: {str(e)}")
@@ -78,13 +78,15 @@ class TokenResponse(BaseModel):
 class MessageRequest(BaseModel):
     text: Optional[str] = None
     audio_base64: Optional[str] = None
-    type: str = "text"  # text, audio, command
+    type: str = "text"
 
 class MessageResponse(BaseModel):
     session_id: str
     output: str
     type: str
     timestamp: str
+    debe_ser_audio: Optional[bool] = False
+    audio_url: Optional[str] = None
 
 class CalendarEvent(BaseModel):
     id: str
@@ -133,20 +135,17 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     """
     Authenticate user against PostgreSQL database and return JWT token.
     """
-    # Query user from database
     result = await db.execute(
         select(User).where(User.username == credentials.username)
     )
     user = result.scalar_one_or_none()
     
-    # Validate user exists and password is correct
     if not user or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User account is disabled")
     
-    # Create JWT token
     access_token = create_access_token(data={"sub": user.username})
     expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
@@ -161,7 +160,6 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     """
     Register a new user in the system.
     """
-    # Check if user already exists
     result = await db.execute(
         select(User).where(
             (User.username == user_data.username) | (User.email == user_data.email)
@@ -170,7 +168,6 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Username or email already registered")
     
-    # Create new user
     hashed_pwd = hash_password(user_data.password)
     new_user = User(
         username=user_data.username,
@@ -239,7 +236,10 @@ async def send_message(
 
 @app.websocket("/ws/{username}")
 async def websocket_endpoint(websocket: WebSocket, username: str, token: str = None):
-    """WebSocket for real-time chat."""
+    """
+    WebSocket endpoint for real-time chat with n8n integration.
+    Adapts Flutter messages to n8n webhook format (Evolution API style).
+    """
     if not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -251,6 +251,7 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
         return
     
     await websocket.accept()
+    logger.info(f"WebSocket connected for user: {username}")
     
     if username not in active_connections:
         active_connections[username] = []
@@ -260,38 +261,114 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = N
         while True:
             data = await websocket.receive_text()
             message_data = json.loads(data)
-            session_id = str(uuid.uuid4())
             
-            payload = {
-                "session_id": session_id,
-                "user": username,
-                "timestamp": datetime.utcnow().isoformat(),
-                **message_data
+            event = message_data.get('event', 'messages.upsert')
+            data_payload = message_data.get('data', {})
+            
+            # Extract message details
+            key_info = data_payload.get('key', {})
+            session_id = key_info.get('id', str(uuid.uuid4()))
+            message_content = data_payload.get('message', {})
+            message_type = data_payload.get('messageType', 'conversation')
+            
+            # Get the actual message text or audio
+            if message_type == 'conversation':
+                final_message = message_content.get('conversation', '')
+                msg_type = 'text'
+                audio_base64 = None
+            elif message_type == 'audioMessage':
+                final_message = '[Audio Message]'
+                msg_type = 'audio'
+                audio_base64 = message_content.get('base64', '')
+            else:
+                final_message = str(message_content)
+                msg_type = 'text'
+                audio_base64 = None
+            
+            n8n_payload = {
+                "event": event,
+                "instance": message_data.get('instance', 'AxIAPersonal'),
+                "data": {
+                    "key": {
+                        "remoteJid": f"{username}@app.axia.net",
+                        "fromMe": False,
+                        "id": session_id
+                    },
+                    "pushName": username,
+                    "message": {
+                        "conversation": final_message if msg_type == 'text' else None,
+                        "base64": audio_base64 if msg_type == 'audio' else None
+                    },
+                    "messageType": message_type,
+                    "messageTimestamp": int(datetime.utcnow().timestamp())
+                },
+                "destination": message_data.get('destination', N8N_WEBHOOK_URL),
+                "date_time": datetime.utcnow().isoformat(),
+                "sender": f"{username}@app.axia.net"
             }
+            
+            # Remove None values
+            if n8n_payload["data"]["message"]["conversation"] is None:
+                del n8n_payload["data"]["message"]["conversation"]
+            if n8n_payload["data"]["message"]["base64"] is None:
+                del n8n_payload["data"]["message"]["base64"]
+            
+            logger.info(f"Sending to n8n: {json.dumps(n8n_payload, indent=2)}")
             
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(N8N_WEBHOOK_URL, json=payload) as resp:
+                    async with session.post(N8N_WEBHOOK_URL, json=n8n_payload) as resp:
                         if resp.status == 200:
-                            result = await resp.json()
-                            response_msg = {
-                                "session_id": session_id,
-                                "output": result.get("output", ""),
-                                "type": result.get("type", "text"),
-                                "timestamp": datetime.utcnow().isoformat()
-                            }
-                            await websocket.send_json(response_msg)
+                            # Try to parse n8n response
+                            try:
+                                result = await resp.json()
+                                
+                                output_text = result.get('output', result.get('text', ''))
+                                response_type = result.get('type', 'text')
+                                debe_ser_audio = result.get('debe_ser_audio', False)
+                                audio_url = result.get('audio_url', None)
+                                
+                                response_msg = {
+                                    "session_id": session_id,
+                                    "output": output_text,
+                                    "type": 'audio' if debe_ser_audio else response_type,
+                                    "debe_ser_audio": debe_ser_audio,
+                                    "audio_url": audio_url,
+                                    "timestamp": datetime.utcnow().isoformat()
+                                }
+                                
+                                await websocket.send_json(response_msg)
+                                logger.info(f"Response sent to Flutter: {response_msg}")
+                            except Exception as json_error:
+                                # If n8n doesn't return JSON, send text response
+                                text_resp = await resp.text()
+                                await websocket.send_json({
+                                    "session_id": session_id,
+                                    "output": text_resp,
+                                    "type": "text",
+                                    "timestamp": datetime.utcnow().isoformat()
+                                })
                         else:
-                            await websocket.send_json({"error": "n8n error", "session_id": session_id})
+                            logger.error(f"n8n returned status: {resp.status}")
+                            await websocket.send_json({
+                                "error": "n8n error", 
+                                "session_id": session_id,
+                                "status": resp.status
+                            })
             except Exception as e:
-                logger.error(f"WebSocket error: {e}")
-                await websocket.send_json({"error": "Processing failed", "session_id": session_id})
+                logger.error(f"WebSocket processing error: {e}")
+                await websocket.send_json({
+                    "error": "Processing failed", 
+                    "session_id": session_id,
+                    "details": str(e)
+                })
                 
     except Exception as e:
         logger.info(f"WebSocket disconnected: {e}")
     finally:
         if websocket in active_connections.get(username, []):
             active_connections[username].remove(websocket)
+        logger.info(f"WebSocket connection closed for user: {username}")
 
 @app.get("/calendar/events")
 async def get_calendar_events(

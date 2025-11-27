@@ -14,11 +14,14 @@ class AuthService {
       
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.tokenEndpoint}'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
           'username': username,
           'password': password,
-        },
+        }),
       ).timeout(
         const Duration(seconds: 10),
         onTimeout: () => throw Exception('Connection timeout'),
