@@ -19,11 +19,25 @@ class _NotesScreenState extends State<NotesScreen> {
   String _searchQuery = '';
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      (Provider.of<NotesProvider>(context, listen: false) as dynamic).fetchNotes();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mis Notas'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () {
+              (Provider.of<NotesProvider>(context, listen: false) as dynamic).fetchNotes();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.add_rounded),
             onPressed: () => _showNoteDialog(context),
@@ -44,59 +58,62 @@ class _NotesScreenState extends State<NotesScreen> {
                       .contains(_searchQuery.toLowerCase()))
               .toList();
 
-          return SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CustomSearchField(
-                    hintText: 'Buscar notas...',
-                    onChanged: (value) => setState(() => _searchQuery = value),
-                    leadingIcon: Icons.search_rounded,
-                  ),
-                  const SizedBox(height: 24),
-                  if (notesProvider.pinnedNotes.isNotEmpty) ...[
-                    Text(
-                      'Fijadas',
-                      style: AppTypography.body1.copyWith(
-                        color: AppColors.neonPurple,
-                        fontWeight: FontWeight.w600,
-                      ),
+          return RefreshIndicator(
+            onRefresh: () async => await (notesProvider as dynamic).fetchNotes(),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CustomSearchField(
+                      hintText: 'Buscar notas...',
+                      onChanged: (value) => setState(() => _searchQuery = value),
+                      leadingIcon: Icons.search_rounded,
                     ),
+                    const SizedBox(height: 24),
+                    if (notesProvider.pinnedNotes.isNotEmpty) ...[
+                      Text(
+                        'Fijadas',
+                        style: AppTypography.body1.copyWith(
+                          color: AppColors.neonPurple,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ..._buildNotesList(
+                        notesProvider.pinnedNotes,
+                        notesProvider,
+                        context,
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                    if (filteredNotes.isNotEmpty)
+                      Text(
+                        'Todas las Notas',
+                        style: AppTypography.body1.copyWith(
+                          color: AppColors.textDarkPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      )
+                    else if (notesProvider.pinnedNotes.isEmpty)
+                      EmptyState(
+                        title: 'Sin notas',
+                        description: 'Comienza creando tu primera nota privada',
+                        icon: Icons.note_outlined,
+                        buttonLabel: 'Nueva Nota',
+                        onButtonPressed: () => _showNoteDialog(context),
+                      ),
                     const SizedBox(height: 12),
                     ..._buildNotesList(
-                      notesProvider.pinnedNotes,
+                      filteredNotes.where((n) => !n.isPinned).toList(),
                       notesProvider,
                       context,
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 80),
                   ],
-                  if (filteredNotes.isNotEmpty)
-                    Text(
-                      'Todas las Notas',
-                      style: AppTypography.body1.copyWith(
-                        color: AppColors.textDarkPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    )
-                  else if (notesProvider.pinnedNotes.isEmpty)
-                    EmptyState(
-                      title: 'Sin notas',
-                      description: 'Comienza creando tu primera nota privada',
-                      icon: Icons.note_outlined,
-                      buttonLabel: 'Nueva Nota',
-                      onButtonPressed: () => _showNoteDialog(context),
-                    ),
-                  const SizedBox(height: 12),
-                  ..._buildNotesList(
-                    filteredNotes.where((n) => !n.isPinned).toList(),
-                    notesProvider,
-                    context,
-                  ),
-                  const SizedBox(height: 80),
-                ],
+                ),
               ),
             ),
           );

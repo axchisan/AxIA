@@ -70,8 +70,9 @@ class _SplashScreenState extends State<SplashScreen>
               child: ScaleTransition(
                 scale: _scaleAnimation,
                 child: Container(
-                  height: 120,
-                  width: 120,
+                  height: 140,
+                  width: 140,
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -91,12 +92,15 @@ class _SplashScreenState extends State<SplashScreen>
                     ],
                   ),
                   child: const Center(
-                    child: Text(
-                      'AxIA',
-                      style: TextStyle(
-                        fontSize: 60,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: Text(
+                        'AxIA',
+                        style: TextStyle(
+                          fontSize: 48,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),

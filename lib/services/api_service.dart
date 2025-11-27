@@ -67,8 +67,8 @@ class ApiService {
         headers: headers,
         body: jsonEncode({
           'summary': summary,
-          'start_time': startTime.toIso8601String(),
-          'end_time': endTime.toIso8601String(),
+          'start_time': startTime.toUtc().toIso8601String(),
+          'end_time': endTime.toUtc().toIso8601String(),
           'description': description,
           'location': location,
         }),

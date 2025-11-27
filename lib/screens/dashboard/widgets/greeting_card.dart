@@ -7,12 +7,7 @@ import '../../../providers/tasks_provider.dart';
 import '../../../providers/calendar_provider.dart';
 
 class GreetingCard extends StatelessWidget {
-  final AnimationController animationController;
-
-  const GreetingCard({
-    Key? key,
-    required this.animationController,
-  }) : super(key: key);
+  const GreetingCard({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {

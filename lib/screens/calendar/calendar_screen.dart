@@ -26,12 +26,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     super.initState();
     _selectedDay = _focusedDay;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = Provider.of<CalendarProvider>(context, listen: false);
-      provider.fetchEvents(
-        timeMin: DateTime.now().subtract(const Duration(days: 30)),
-        timeMax: DateTime.now().add(const Duration(days: 60)),
-      );
+      _loadEvents();
     });
+  }
+  
+  Future<void> _loadEvents() async {
+    final provider = Provider.of<CalendarProvider>(context, listen: false);
+    await provider.fetchEvents(
+      timeMin: DateTime.now().subtract(const Duration(days: 30)),
+      timeMax: DateTime.now().add(const Duration(days: 60)),
+    );
   }
 
   @override
@@ -42,9 +46,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            onPressed: () {
-              Provider.of<CalendarProvider>(context, listen: false).fetchEvents();
-            },
+            onPressed: _loadEvents,
           ),
         ],
       ),
@@ -58,15 +60,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ? calendarProvider.getEventsForDay(_selectedDay!).cast<CalendarEvent>()
               : <CalendarEvent>[];
 
-          return SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              children: [
-                _buildCalendar(calendarProvider),
-                const SizedBox(height: 16),
-                _buildEventsList(selectedEvents),
-                const SizedBox(height: 80),
-              ],
+          return RefreshIndicator(
+            onRefresh: _loadEvents,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                children: [
+                  _buildCalendar(calendarProvider),
+                  const SizedBox(height: 16),
+                  _buildEventsList(selectedEvents),
+                  const SizedBox(height: 80),
+                ],
+              ),
             ),
           );
         },

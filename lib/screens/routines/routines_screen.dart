@@ -23,12 +23,20 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
     });
   }
 
+  Future<void> _refreshRoutines() async {
+    await Provider.of<RoutineProvider>(context, listen: false).loadRoutines();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mis Rutinas'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _refreshRoutines,
+          ),
           IconButton(
             icon: const Icon(Icons.add_rounded),
             onPressed: () => _showRoutineDialog(context),
@@ -49,18 +57,21 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
             return _buildEmptyState(context);
           }
 
-          return SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildProgressSection(progress, completed, total),
-                  const SizedBox(height: 32),
-                  _buildRoutinesList(context, routineProvider),
-                  const SizedBox(height: 80),
-                ],
+          return RefreshIndicator(
+            onRefresh: _refreshRoutines,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildProgressSection(progress, completed, total),
+                    const SizedBox(height: 32),
+                    _buildRoutinesList(context, routineProvider),
+                    const SizedBox(height: 80),
+                  ],
+                ),
               ),
             ),
           );

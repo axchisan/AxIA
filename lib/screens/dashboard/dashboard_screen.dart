@@ -27,9 +27,27 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: const Duration(seconds: 4),
+      duration: const Duration(seconds: 6),
       vsync: this,
     )..repeat();
+    
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    final presenceProvider = context.read<PresenceProvider>();
+    final routineProvider = context.read<RoutineProvider>();
+    final chatProvider = context.read<ChatProvider>();
+    
+    await Future.wait([
+      presenceProvider.loadPresence(),
+      routineProvider.loadRoutines(),
+      chatProvider.initializeWebSocket(),
+    ]);
+  }
+
+  Future<void> _refreshData() async {
+    await _loadInitialData();
   }
 
   @override
@@ -45,24 +63,27 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         children: [
           _buildAnimatedBackground(),
           SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHeader(),
-                    const SizedBox(height: 24),
-                    GreetingCard(animationController: _animationController),
-                    const SizedBox(height: 24),
-                    PresenceWidget(),
-                    const SizedBox(height: 24),
-                    QuickRoutines(),
-                    const SizedBox(height: 24),
-                    RecentChats(),
-                    const SizedBox(height: 30),
-                  ],
+            child: RefreshIndicator(
+              onRefresh: _refreshData,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(),
+                      const SizedBox(height: 24),
+                      const GreetingCard(),
+                      const SizedBox(height: 24),
+                      PresenceWidget(),
+                      const SizedBox(height: 24),
+                      QuickRoutines(),
+                      const SizedBox(height: 24),
+                      RecentChats(),
+                      const SizedBox(height: 30),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -84,31 +105,16 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           ],
         ),
       ),
-      child: Stack(
-        children: [
-          AnimatedBuilder(
-            animation: _animationController,
-            builder: (context, child) {
-              return Positioned(
-                top: -100 + (_animationController.value * 50),
-                right: -100 + (_animationController.value * 50),
-                child: Container(
-                  width: 300,
-                  height: 300,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        AppColors.neonPurple.withOpacity(0.1),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
+      child: AnimatedBuilder(
+        animation: _animationController,
+        builder: (context, child) {
+          return CustomPaint(
+            painter: _BackgroundPainter(
+              animationValue: _animationController.value,
+            ),
+            child: Container(),
+          );
+        },
       ),
     );
   }
@@ -157,5 +163,42 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         ),
       ],
     );
+  }
+}
+
+class _BackgroundPainter extends CustomPainter {
+  final double animationValue;
+
+  _BackgroundPainter({required this.animationValue});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          AppColors.neonPurple.withOpacity(0.08),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCircle(
+        center: Offset(
+          size.width * 0.8 + (animationValue * 20),
+          size.height * 0.2 + (animationValue * 20),
+        ),
+        radius: 150,
+      ));
+
+    canvas.drawCircle(
+      Offset(
+        size.width * 0.8 + (animationValue * 20),
+        size.height * 0.2 + (animationValue * 20),
+      ),
+      150,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_BackgroundPainter oldDelegate) {
+    return animationValue != oldDelegate.animationValue;
   }
 }

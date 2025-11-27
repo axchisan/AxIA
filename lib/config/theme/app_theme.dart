@@ -10,6 +10,13 @@ class AppTheme {
       primaryColor: AppColors.primaryViolet,
       scaffoldBackgroundColor: AppColors.bgDarkPrimary,
       
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        },
+      ),
+      
       // AppBar Theme
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.bgDarkSecondary,
@@ -103,6 +110,13 @@ class AppTheme {
       brightness: Brightness.light,
       primaryColor: AppColors.primaryViolet,
       scaffoldBackgroundColor: AppColors.bgLightPrimary,
+      
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        },
+      ),
       
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.bgLightCard,

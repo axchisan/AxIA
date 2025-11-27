@@ -27,24 +27,27 @@ class PresenceScreen extends StatelessWidget {
       ),
       body: Consumer<PresenceProvider>(
         builder: (context, presenceProvider, _) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildCurrentStatus(presenceProvider),
-                const SizedBox(height: 24),
-                _buildActivityTimer(context, presenceProvider),
-                const SizedBox(height: 24),
-                _buildStatusOptions(context, presenceProvider),
-                const SizedBox(height: 24),
-                _buildCustomMessage(context, presenceProvider),
-                const SizedBox(height: 24),
-                _buildStatusInfo(),
-                const SizedBox(height: 24),
-                _buildChatbotInfo(),
-              ],
+          return RefreshIndicator(
+            onRefresh: () => presenceProvider.loadPresence(),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildCurrentStatus(presenceProvider),
+                  const SizedBox(height: 24),
+                  _buildActivityTimer(context, presenceProvider),
+                  const SizedBox(height: 24),
+                  _buildStatusOptions(context, presenceProvider),
+                  const SizedBox(height: 24),
+                  _buildCustomMessage(context, presenceProvider),
+                  const SizedBox(height: 24),
+                  _buildStatusInfo(),
+                  const SizedBox(height: 24),
+                  _buildChatbotInfo(),
+                ],
+              ),
             ),
           );
         },
@@ -210,10 +213,9 @@ class PresenceScreen extends StatelessWidget {
               Expanded(
                 child: GradientButton(
                   label: 'Marcar como Online',
-                  onPressed: () {
-                    if (provider.isOnline) return;
-                    provider.markAsOnline();
-                  },
+                  onPressed: provider.isOnline
+                      ? () {}
+                      : provider.markAsOnline,
                   icon: Icons.check_circle_outline_rounded,
                 ),
               ),
