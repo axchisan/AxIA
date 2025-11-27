@@ -184,7 +184,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildEventCard(CalendarEvent event) {
-    final timeFormat = DateFormat('HH:mm');
+    final timeFormat = DateFormat('h:mm a');
     final startTime = timeFormat.format(event.startTime);
     final endTime = timeFormat.format(event.endTime);
 

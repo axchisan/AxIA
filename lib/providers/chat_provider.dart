@@ -134,8 +134,16 @@ class ChatProvider extends ChangeNotifier {
       String? audioUrl = data['audio_url'];
       String? audioBase64 = data['audio_base64'];
       
+      final messageId = data['session_id'] ?? DateTime.now().toString();
+      final isDuplicate = _messages.any((msg) => msg.id == messageId);
+      
+      if (isDuplicate) {
+        debugPrint('Duplicate message detected: $messageId');
+        return;
+      }
+      
       final axiaMessage = ChatMessage(
-        id: data['session_id'] ?? DateTime.now().toString(),
+        id: messageId,
         content: content,
         sender: MessageSender.axia,
         timestamp: DateTime.now(),
@@ -157,7 +165,7 @@ class ChatProvider extends ChangeNotifier {
       
       notifyListeners();
     } catch (e) {
-      // Ignore parsing errors
+      debugPrint('Error handling incoming message: $e');
     }
   }
 

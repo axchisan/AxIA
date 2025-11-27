@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:developer';
 
 class AudioService {
   final AudioRecorder _recorder = AudioRecorder();
@@ -169,14 +170,17 @@ class AudioService {
       player.playerStateStream.listen((state) async {
         if (state.processingState == ProcessingState.completed) {
           try {
-            await file.delete();
+            await Future.delayed(const Duration(milliseconds: 500));
+            if (await file.exists()) {
+              await file.delete();
+            }
           } catch (e) {
-            // Ignore deletion errors
+            log('Error deleting temp audio file: $e');
           }
         }
       });
     } catch (e) {
-      // Ignore playback errors
+      log('Error playing audio from base64: $e');
     }
   }
 

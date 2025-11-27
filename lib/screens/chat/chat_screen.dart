@@ -219,7 +219,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 if (_isRecording && !_isRecordingLocked) {
                   setState(() {
                     _slideOffset = details.localOffsetFromOrigin.dy;
-                    if (_slideOffset < -100) {
+                    if (_slideOffset < -80) {
                       _lockRecording();
                     }
                   });
@@ -229,23 +229,26 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 alignment: Alignment.center,
                 children: [
                   // Recording indicator
-                  if (_isRecording && !_isRecordingLocked)
+                  if (_isRecording)
                     Positioned(
                       bottom: 70,
                       child: Column(
                         children: [
-                          Icon(
-                            Icons.lock_open_rounded,
-                            color: Colors.white.withOpacity(0.7),
-                            size: 24,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Desliza arriba para fijar',
-                            style: AppTypography.caption.copyWith(
+                          if (!_isRecordingLocked)
+                            Icon(
+                              Icons.lock_open_rounded,
                               color: Colors.white.withOpacity(0.7),
+                              size: 24,
                             ),
-                          ),
+                          if (!_isRecordingLocked)
+                            const SizedBox(height: 4),
+                          if (!_isRecordingLocked)
+                            Text(
+                              'Desliza arriba para fijar',
+                              style: AppTypography.caption.copyWith(
+                                color: Colors.white.withOpacity(0.7),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -259,16 +262,24 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.2),
+                          color: _isRecordingLocked 
+                              ? Colors.orange.withOpacity(0.2)
+                              : Colors.red.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: _isRecordingLocked 
+                                ? Colors.orange 
+                                : Colors.red,
+                            width: 1,
+                          ),
                         ),
                         child: Row(
                           children: [
                             Container(
                               width: 8,
                               height: 8,
-                              decoration: const BoxDecoration(
-                                color: Colors.red,
+                              decoration: BoxDecoration(
+                                color: _isRecordingLocked ? Colors.orange : Colors.red,
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -280,6 +291,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                            if (_isRecordingLocked) ...[
+                              const SizedBox(width: 8),
+                              Icon(
+                                Icons.lock_rounded,
+                                color: Colors.orange,
+                                size: 16,
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -362,9 +381,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _recordingTimer?.cancel();
     
     if (_isRecordingLocked) {
-      // Send the audio
       setState(() => _isRecording = false);
       HapticFeedback.lightImpact();
+      
+      _showSnackbar('Procesando audio de ${_formatRecordingTime(_recordingSeconds)}...');
       
       final audioData = await chatProvider.audioService.stopRecordingAndGetData();
       if (audioData != null) {
@@ -378,12 +398,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _recordingSeconds = 0;
       });
     } else if (_recordingSeconds < 1) {
-      // Too short, cancel
       await _cancelVoiceRecording(chatProvider);
     } else {
-      // Send the audio
       setState(() => _isRecording = false);
       HapticFeedback.lightImpact();
+      
+      _showSnackbar('Procesando audio de ${_formatRecordingTime(_recordingSeconds)}...');
       
       final audioData = await chatProvider.audioService.stopRecordingAndGetData();
       if (audioData != null) {

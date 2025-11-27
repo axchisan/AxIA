@@ -106,12 +106,20 @@ class PresenceProvider extends ChangeNotifier {
   }
 
   Future<void> setInactiveTime(int minutes) async {
-    _inactiveMinutes = minutes;
+    if (minutes < 0) {
+      debugPrint('Invalid minutes value: $minutes');
+      return;
+    }
+
+    _inactiveMinutes = minutes.clamp(0, 525600); // Max 1 year in minutes
+    
     if (minutes == 0) {
       _lastActive = DateTime.now();
       _isOnline = true;
     } else {
-      _lastActive = DateTime.now().subtract(Duration(minutes: minutes));
+      final now = DateTime.now();
+      final subtract = Duration(minutes: minutes);
+      _lastActive = now.subtract(subtract);
       _isOnline = false;
     }
     
