@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'dart:ui';
 import '../../../config/theme/app_colors.dart';
 import '../../../config/theme/app_typography.dart';
+import '../../../providers/tasks_provider.dart';
+import '../../../providers/calendar_provider.dart';
 
 class GreetingCard extends StatelessWidget {
   final AnimationController animationController;
@@ -19,6 +22,25 @@ class GreetingCard extends StatelessWidget {
       if (hour < 18) return 'Buenas tardes';
       return 'Buenas noches';
     }
+
+    final tasksProvider = Provider.of<TasksProvider>(context);
+    final calendarProvider = Provider.of<CalendarProvider>(context);
+    
+    // Count today's tasks
+    final today = DateTime.now();
+    final todayTasks = tasksProvider.tasks.where((task) {
+      if (task.due == null) return false;
+      return task.due!.year == today.year &&
+             task.due!.month == today.month &&
+             task.due!.day == today.day;
+    }).length;
+    
+    // Count today's events
+    final todayEvents = calendarProvider.events.where((event) {
+      return event.startTime.year == today.year &&
+             event.startTime.month == today.month &&
+             event.startTime.day == today.day;
+    }).length;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -63,16 +85,16 @@ class GreetingCard extends StatelessWidget {
                     Expanded(
                       child: _buildStatCard(
                         label: 'Tareas Hoy',
-                        value: '4',
+                        value: '$todayTasks',
                         icon: Icons.task_alt_rounded,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildStatCard(
-                        label: 'Mensajes',
-                        value: '12',
-                        icon: Icons.mail_rounded,
+                        label: 'Eventos',
+                        value: '$todayEvents',
+                        icon: Icons.calendar_today_rounded,
                       ),
                     ),
                   ],

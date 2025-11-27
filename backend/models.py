@@ -76,9 +76,6 @@ class MyActivity(Base):
     id = Column(Integer, primary_key=True)
     last_active = Column(TIMESTAMP, default=func.now())
     is_online = Column(Boolean, default=False)
-    status = Column(String(50), default='available')
-    custom_message = Column(Text)
-    inactive_minutes = Column(Integer, default=0)
 
 class RoutineCreate(BaseModel):
     name: str
@@ -143,8 +140,6 @@ class PresenceUpdate(BaseModel):
 
 class PresenceResponse(BaseModel):
     is_online: bool
-    status: str
-    custom_message: Optional[str]
     last_active: datetime
     inactive_minutes: int
     

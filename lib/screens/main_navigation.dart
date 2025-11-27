@@ -9,6 +9,8 @@ import 'chat/chat_screen.dart';
 import 'presence/presence_screen.dart';
 import 'routines/routines_screen.dart';
 import 'notes/notes_screen.dart';
+import 'calendar/calendar_screen.dart';
+import 'tasks/tasks_screen.dart';
 import 'projects/projects_screen.dart';
 import 'settings/settings_screen.dart';
 
@@ -26,6 +28,8 @@ class _MainNavigationState extends State<MainNavigation> {
     const DashboardScreen(),
     const ChatScreen(),
     const PresenceScreen(),
+    const CalendarScreen(),
+    const TasksScreen(),
     const RoutinesScreen(),
     const NotesScreen(),
   ];
@@ -35,7 +39,6 @@ class _MainNavigationState extends State<MainNavigation> {
     return Scaffold(
       body: _screens[_selectedIndex],
       bottomNavigationBar: _buildBottomNav(),
-      floatingActionButton: _selectedIndex == 1 ? null : _buildFAB(),
     );
   }
 
@@ -58,15 +61,18 @@ class _MainNavigationState extends State<MainNavigation> {
         unselectedItemColor: AppColors.textDarkTertiary,
         selectedLabelStyle: AppTypography.caption.copyWith(
           fontWeight: FontWeight.w600,
+          fontSize: 10,
         ),
-        unselectedLabelStyle: AppTypography.caption,
+        unselectedLabelStyle: AppTypography.caption.copyWith(
+          fontSize: 10,
+        ),
         onTap: (index) {
           setState(() => _selectedIndex = index);
         },
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard_rounded),
-            label: 'Dashboard',
+            label: 'Inicio',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.chat_rounded),
@@ -74,10 +80,18 @@ class _MainNavigationState extends State<MainNavigation> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.radio_button_checked_rounded),
-            label: 'Presencia',
+            label: 'Estado',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.checklist_rounded),
+            icon: Icon(Icons.calendar_today_rounded),
+            label: 'Agenda',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.task_alt_rounded),
+            label: 'Tareas',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.repeat_rounded),
             label: 'Rutinas',
           ),
           BottomNavigationBarItem(
@@ -85,78 +99,6 @@ class _MainNavigationState extends State<MainNavigation> {
             label: 'Notas',
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFAB() {
-    return FloatingActionButton.extended(
-      onPressed: () => _navigateTo(context),
-      backgroundColor: AppColors.primaryViolet,
-      elevation: 8,
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.mic_rounded),
-          const SizedBox(width: 8),
-          Text(
-            'Hey AxIA',
-            style: AppTypography.button.copyWith(color: Colors.white),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _navigateTo(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.bgDarkSecondary,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Ir a...',
-              style: AppTypography.h3.copyWith(
-                color: AppColors.textDarkPrimary,
-              ),
-            ),
-            const SizedBox(height: 20),
-            ...List.generate(
-              _screens.length,
-              (index) => ListTile(
-                leading: Icon(
-                  [
-                    Icons.dashboard_rounded,
-                    Icons.chat_rounded,
-                    Icons.radio_button_checked_rounded,
-                    Icons.checklist_rounded,
-                    Icons.note_rounded,
-                  ][index],
-                  color: AppColors.neonPurple,
-                ),
-                title: Text(
-                  ['Dashboard', 'Chat', 'Presencia', 'Rutinas', 'Notas'][index],
-                  style: AppTypography.body2.copyWith(
-                    color: AppColors.textDarkPrimary,
-                  ),
-                ),
-                onTap: () {
-                  setState(() => _selectedIndex = index);
-                  Navigator.pop(context);
-                },
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

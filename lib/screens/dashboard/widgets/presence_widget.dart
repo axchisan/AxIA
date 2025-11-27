@@ -5,7 +5,21 @@ import '../../../config/theme/app_typography.dart';
 import '../../../models/presence_status.dart';
 import '../../../providers/presence_provider.dart';
 
-class PresenceWidget extends StatelessWidget {
+class PresenceWidget extends StatefulWidget {
+  @override
+  State<PresenceWidget> createState() => _PresenceWidgetState();
+}
+
+class _PresenceWidgetState extends State<PresenceWidget> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final presenceProvider = Provider.of<PresenceProvider>(context, listen: false);
+      presenceProvider.loadPresence();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<PresenceProvider>(
@@ -25,96 +39,73 @@ class PresenceWidget extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Mi Presencia',
-                    style: AppTypography.body1.copyWith(
-                      color: AppColors.textDarkPrimary,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mi Presencia',
+                        style: AppTypography.body1.copyWith(
+                          color: AppColors.textDarkPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (presenceProvider.inactiveMinutes > 0)
+                        Text(
+                          'Inactivo: ${presenceProvider.formattedInactiveTime}',
+                          style: AppTypography.caption.copyWith(
+                            color: AppColors.textDarkSecondary,
+                          ),
+                        ),
+                    ],
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: _getStatusColor(presenceProvider.status).withOpacity(0.2),
+                      color: _getStatusColor(presenceProvider.isOnline).withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: _getStatusColor(presenceProvider.status),
+                        color: _getStatusColor(presenceProvider.isOnline),
                       ),
                     ),
-                    child: Text(
-                      presenceProvider.statusLabel,
-                      style: AppTypography.caption.copyWith(
-                        color: _getStatusColor(presenceProvider.status),
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _getStatusColor(presenceProvider.isOnline),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          presenceProvider.isOnline ? 'Online' : 'Offline',
+                          style: AppTypography.caption.copyWith(
+                            color: _getStatusColor(presenceProvider.isOnline),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: PresenceStatus.values.map((status) {
-                    final isSelected = presenceProvider.status == status;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: GestureDetector(
-                        onTap: () => presenceProvider.setStatus(status),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? _getStatusColor(status).withOpacity(0.2)
-                                : AppColors.bgDarkSecondary,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isSelected
-                                  ? _getStatusColor(status)
-                                  : AppColors.textDarkTertiary.withOpacity(0.2),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: _getStatusColor(status),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                status.name[0].toUpperCase() + status.name.substring(1),
-                                style: AppTypography.caption.copyWith(
-                                  color: isSelected
-                                      ? _getStatusColor(status)
-                                      : AppColors.textDarkSecondary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                style: AppTypography.body2.copyWith(color: AppColors.textDarkPrimary),
-                decoration: InputDecoration(
-                  hintText: 'Mensaje de ausencia...',
-                  hintStyle: AppTypography.body2.copyWith(
-                    color: AppColors.textDarkTertiary,
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/presence');
+                },
+                icon: Icon(Icons.settings_rounded, size: 18),
+                label: Text('Gestionar Estado'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryViolet,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  prefixIcon: Icon(Icons.edit_rounded, color: AppColors.neonPurple),
-                  suffixIcon: Icon(Icons.send_rounded, color: AppColors.neonPurple),
                 ),
-                onChanged: (value) => presenceProvider.setCustomMessage(value),
               ),
             ],
           ),
@@ -123,16 +114,7 @@ class PresenceWidget extends StatelessWidget {
     );
   }
 
-  Color _getStatusColor(PresenceStatus status) {
-    switch (status) {
-      case PresenceStatus.available:
-        return AppColors.statusAvailable;
-      case PresenceStatus.focus:
-        return AppColors.statusFocus;
-      case PresenceStatus.away:
-        return AppColors.statusAway;
-      case PresenceStatus.busy:
-        return AppColors.statusBusy;
-    }
+  Color _getStatusColor(bool isOnline) {
+    return isOnline ? AppColors.statusAvailable : AppColors.statusAway;
   }
 }
