@@ -157,15 +157,15 @@ class ChatProvider extends ChangeNotifier {
       
       if (isVoiceResponse && (audioBase64 != null || audioUrl != null)) {
         if (audioBase64 != null) {
-          _audioService.playAudioFromBase64(audioBase64);
+          _audioService.playAudioFromBase64(axiaMessage.id, audioBase64);
         } else if (audioUrl != null) {
-          _audioService.playAudioFromUrl(audioUrl);
+          _audioService.playAudioFromUrl(axiaMessage.id, audioUrl);
         }
       }
       
       notifyListeners();
     } catch (e) {
-      print('[ChatProvider] Error parsing message: $e');
+      // Ignore parsing errors
     }
   }
 

@@ -7,16 +7,30 @@ import 'dart:convert';
 
 class AudioService {
   final AudioRecorder _recorder = AudioRecorder();
-  final AudioPlayer _player = AudioPlayer();
+  final Map<String, AudioPlayer> _players = {};
   bool _isRecording = false;
   String? _currentRecordingPath;
   DateTime? _recordingStartTime;
-  double _playbackSpeed = 1.0;
 
   bool get isRecording => _isRecording;
   Duration? get recordingDuration => _recordingStartTime != null 
       ? DateTime.now().difference(_recordingStartTime!) 
       : null;
+
+  AudioPlayer getPlayerForMessage(String messageId) {
+    if (!_players.containsKey(messageId)) {
+      _players[messageId] = AudioPlayer();
+    }
+    return _players[messageId]!;
+  }
+
+  Future<void> stopAllExcept(String messageId) async {
+    for (var entry in _players.entries) {
+      if (entry.key != messageId && entry.value.playing) {
+        await entry.value.pause();
+      }
+    }
+  }
 
   Future<bool> requestPermission() async {
     try {
@@ -117,28 +131,33 @@ class AudioService {
     }
   }
 
-  Future<void> setPlaybackSpeed(double speed) async {
-    _playbackSpeed = speed;
-    await _player.setSpeed(speed);
+  Future<void> setPlaybackSpeed(String messageId, double speed) async {
+    final player = getPlayerForMessage(messageId);
+    await player.setSpeed(speed);
   }
 
-  double get playbackSpeed => _playbackSpeed;
+  double getPlaybackSpeed(String messageId) {
+    final player = getPlayerForMessage(messageId);
+    return player.speed;
+  }
 
-  Future<void> playAudioFromBase64(String audioBase64) async {
+  Future<void> playAudioFromBase64(String messageId, String audioBase64) async {
     try {
+      await stopAllExcept(messageId);
+      
+      final player = getPlayerForMessage(messageId);
       final bytes = base64Decode(audioBase64);
       final directory = await getTemporaryDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final tempPath = '${directory.path}/axia_playback_$timestamp.m4a';
+      final tempPath = '${directory.path}/axia_playback_${messageId}_$timestamp.m4a';
       
       final file = File(tempPath);
       await file.writeAsBytes(bytes);
 
-      await _player.setFilePath(tempPath);
-      await _player.setSpeed(_playbackSpeed);
-      await _player.play();
+      await player.setFilePath(tempPath);
+      await player.play();
 
-      _player.playerStateStream.listen((state) async {
+      player.playerStateStream.listen((state) async {
         if (state.processingState == ProcessingState.completed) {
           try {
             await file.delete();
@@ -152,58 +171,81 @@ class AudioService {
     }
   }
 
-  Future<void> playAudioFromUrl(String url) async {
+  Future<void> playAudioFromUrl(String messageId, String url) async {
     try {
-      await _player.setUrl(url);
-      await _player.setSpeed(_playbackSpeed);
-      await _player.play();
+      await stopAllExcept(messageId);
+      
+      final player = getPlayerForMessage(messageId);
+      await player.setUrl(url);
+      await player.play();
     } catch (e) {
       // Ignore playback errors
     }
   }
 
-  Future<void> pausePlayback() async {
+  Future<void> pausePlayback(String messageId) async {
     try {
-      await _player.pause();
+      final player = getPlayerForMessage(messageId);
+      await player.pause();
     } catch (e) {
       // Ignore errors
     }
   }
 
-  Future<void> resumePlayback() async {
+  Future<void> resumePlayback(String messageId) async {
     try {
-      await _player.play();
+      await stopAllExcept(messageId);
+      
+      final player = getPlayerForMessage(messageId);
+      await player.play();
     } catch (e) {
       // Ignore errors
     }
   }
 
-  Future<void> stopPlayback() async {
+  Future<void> stopPlayback(String messageId) async {
     try {
-      await _player.stop();
+      final player = getPlayerForMessage(messageId);
+      await player.stop();
     } catch (e) {
       // Ignore errors
     }
   }
 
-  Future<void> seekTo(Duration position) async {
+  Future<void> seekTo(String messageId, Duration position) async {
     try {
-      await _player.seek(position);
+      final player = getPlayerForMessage(messageId);
+      await player.seek(position);
     } catch (e) {
       // Ignore errors
     }
   }
 
-  bool get isPlaying => _player.playing;
+  bool isPlaying(String messageId) {
+    final player = getPlayerForMessage(messageId);
+    return player.playing;
+  }
 
-  Stream<Duration> get positionStream => _player.positionStream;
+  Stream<Duration> positionStream(String messageId) {
+    final player = getPlayerForMessage(messageId);
+    return player.positionStream;
+  }
 
-  Duration? get duration => _player.duration;
+  Duration? getDuration(String messageId) {
+    final player = getPlayerForMessage(messageId);
+    return player.duration;
+  }
 
-  Duration? get currentPosition => _player.position;
+  Duration? getCurrentPosition(String messageId) {
+    final player = getPlayerForMessage(messageId);
+    return player.position;
+  }
 
   Future<void> dispose() async {
     await _recorder.dispose();
-    await _player.dispose();
+    for (var player in _players.values) {
+      await player.dispose();
+    }
+    _players.clear();
   }
 }

@@ -665,12 +665,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildAudioPlayer(dynamic message, bool isUserMessage, ChatProvider chatProvider) {
+    final messageId = message.id;
+    
     return StreamBuilder<Duration>(
-      stream: chatProvider.audioService.positionStream,
+      stream: chatProvider.audioService.positionStream(messageId),
       builder: (context, snapshot) {
         final position = snapshot.data ?? Duration.zero;
-        final duration = chatProvider.audioService.duration ?? Duration.zero;
-        final isPlaying = chatProvider.audioService.isPlaying;
+        final duration = chatProvider.audioService.getDuration(messageId) ?? Duration.zero;
+        final isPlaying = chatProvider.audioService.isPlaying(messageId);
 
         return Column(
           children: [
@@ -680,12 +682,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 GestureDetector(
                   onTap: () async {
                     if (isPlaying) {
-                      await chatProvider.audioService.pausePlayback();
+                      await chatProvider.audioService.pausePlayback(messageId);
                     } else {
                       if (message.audioBase64 != null) {
-                        await chatProvider.audioService.playAudioFromBase64(message.audioBase64);
+                        await chatProvider.audioService.playAudioFromBase64(messageId, message.audioBase64);
                       } else if (message.audioUrl != null) {
-                        await chatProvider.audioService.playAudioFromUrl(message.audioUrl);
+                        await chatProvider.audioService.playAudioFromUrl(messageId, message.audioUrl);
                       }
                     }
                     setState(() {});
@@ -725,11 +727,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         ),
                         child: Slider(
                           value: duration.inMilliseconds > 0 
-                              ? position.inMilliseconds.toDouble()
+                              ? position.inMilliseconds.toDouble().clamp(0.0, duration.inMilliseconds.toDouble())
                               : 0,
-                          max: duration.inMilliseconds.toDouble(),
+                          max: duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1.0,
                           onChanged: (value) async {
                             await chatProvider.audioService.seekTo(
+                              messageId,
                               Duration(milliseconds: value.toInt()),
                             );
                           },
@@ -769,7 +772,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                   color: AppColors.bgDarkCard,
                   onSelected: (speed) async {
-                    await chatProvider.audioService.setPlaybackSpeed(speed);
+                    await chatProvider.audioService.setPlaybackSpeed(messageId, speed);
                     setState(() {});
                   },
                   itemBuilder: (context) => [
