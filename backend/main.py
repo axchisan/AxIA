@@ -437,6 +437,72 @@ async def get_message_history(
 async def health_check():
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
+@app.post("/app-message")
+async def receive_app_message(request: Request):
+    """
+    Endpoint para que n8n envíe respuestas a la app
+    
+    Expected JSON from n8n:
+    {
+        "username": "AxchiSan",
+        "session_id": "uuid-here",
+        "output": "Texto de la respuesta",
+        "type": "text",  // or "audio"
+        "debe_ser_audio": false,
+        "audio_url": null,  // or URL if debe_ser_audio is true
+        "audio_base64": null  // or base64 string if debe_ser_audio is true
+    }
+    """
+    try:
+        data = await request.json()
+        logger.info(f"Received message from n8n: {json.dumps(data, indent=2)}")
+        
+        username = data.get('username')
+        if not username:
+            raise HTTPException(status_code=400, detail="username is required")
+        
+        # Find active WebSocket connections for this user
+        user_connections = active_connections.get(username, [])
+        
+        if not user_connections:
+            logger.warning(f"No active connections for user: {username}")
+            return {"status": "no_active_connections", "username": username}
+        
+        # Prepare response message
+        response_msg = {
+            "session_id": data.get('session_id', str(uuid.uuid4())),
+            "output": data.get('output', ''),
+            "type": data.get('type', 'text'),
+            "debe_ser_audio": data.get('debe_ser_audio', False),
+            "audio_url": data.get('audio_url'),
+            "audio_base64": data.get('audio_base64'),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        # Send to all active connections for this user
+        disconnected = []
+        for ws in user_connections:
+            try:
+                await ws.send_json(response_msg)
+                logger.info(f"Message sent to WebSocket for user: {username}")
+            except Exception as e:
+                logger.error(f"Error sending to WebSocket: {e}")
+                disconnected.append(ws)
+        
+        # Clean up disconnected websockets
+        for ws in disconnected:
+            user_connections.remove(ws)
+        
+        return {
+            "status": "success",
+            "username": username,
+            "connections_notified": len(user_connections)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in /app-message: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8077)

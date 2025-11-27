@@ -35,7 +35,7 @@ class _MainNavigationState extends State<MainNavigation> {
     return Scaffold(
       body: _screens[_selectedIndex],
       bottomNavigationBar: _buildBottomNav(),
-      floatingActionButton: _buildFAB(),
+      floatingActionButton: _selectedIndex == 1 ? null : _buildFAB(),
     );
   }
 

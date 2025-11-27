@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../models/chat_message.dart';
 import '../config/api_config.dart';
 import '../services/auth_service.dart';
+import '../services/audio_service.dart';
 
 class ChatProvider extends ChangeNotifier {
   List<ChatMessage> _messages = [];
@@ -15,11 +16,13 @@ class ChatProvider extends ChangeNotifier {
   String? _currentSessionId;
   String? _currentUsername;
   SharedPreferences? _prefs;
+  final AudioService _audioService = AudioService();
 
   List<ChatMessage> get messages => _messages;
   bool get isConnected => _isConnected;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  AudioService get audioService => _audioService;
 
   ChatProvider() {
     _initStorage();
@@ -40,7 +43,7 @@ class ChatProvider extends ChangeNotifier {
         _messages = decoded.map((json) => ChatMessage.fromJson(json)).toList();
         notifyListeners();
       } catch (e) {
-        print('Error loading messages: $e');
+        print('[ChatProvider] Error loading messages: $e');
         _loadMockData();
       }
     } else {
@@ -57,7 +60,7 @@ class ChatProvider extends ChangeNotifier {
       );
       await _prefs!.setString('chat_messages', messagesJson);
     } catch (e) {
-      print('Error saving messages: $e');
+      print('[ChatProvider] Error saving messages: $e');
     }
   }
 
@@ -65,7 +68,7 @@ class ChatProvider extends ChangeNotifier {
     _messages = [
       ChatMessage(
         id: '1',
-        content: '¡Hola! Soy AxIA. ¿Cómo puedo ayudarte hoy?',
+        content: '### 👋 ¡Hola! Soy **AxIA**\n\nTu asistente personal inteligente. ¿En qué puedo ayudarte hoy?\n\n✅ Gestiona tu agenda\n📧 Revisa correos\n📝 Organiza tareas\n🎯 Y mucho más...',
         sender: MessageSender.axia,
         timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
       ),
@@ -134,8 +137,10 @@ class ChatProvider extends ChangeNotifier {
     try {
       final data = jsonDecode(message);
       
-      String content = data['output'] ?? '';
+      String content = data['output'] ?? data['text'] ?? '';
       bool isVoiceResponse = data['type'] == 'audio' || data['debe_ser_audio'] == true;
+      String? audioUrl = data['audio_url'];
+      String? audioBase64 = data['audio_base64'];
       
       final axiaMessage = ChatMessage(
         id: data['session_id'] ?? DateTime.now().toString(),
@@ -143,14 +148,24 @@ class ChatProvider extends ChangeNotifier {
         sender: MessageSender.axia,
         timestamp: DateTime.now(),
         isVoice: isVoiceResponse,
-        audioUrl: data['audio_url'],
+        audioUrl: audioUrl,
+        audioBase64: audioBase64,
       );
 
       _messages.add(axiaMessage);
       _saveMessagesToStorage();
+      
+      if (isVoiceResponse && (audioBase64 != null || audioUrl != null)) {
+        if (audioBase64 != null) {
+          _audioService.playAudioFromBase64(audioBase64);
+        } else if (audioUrl != null) {
+          _audioService.playAudioFromUrl(audioUrl);
+        }
+      }
+      
       notifyListeners();
     } catch (e) {
-      print('Error parsing message: $e');
+      print('[ChatProvider] Error parsing message: $e');
     }
   }
 
@@ -220,7 +235,7 @@ class ChatProvider extends ChangeNotifier {
 
     final userMessage = ChatMessage(
       id: DateTime.now().toString(),
-      content: '[Audio enviado]',
+      content: '🎤 Mensaje de voz',
       sender: MessageSender.user,
       timestamp: DateTime.now(),
       isVoice: true,
@@ -254,7 +269,7 @@ class ChatProvider extends ChangeNotifier {
 
     try {
       _channel!.sink.add(payload);
-      print('[ChatProvider] Audio message sent');
+      print('[ChatProvider] Audio message sent (${audioBase64.length} chars)');
     } catch (e) {
       _error = 'Failed to send audio: $e';
       print('[ChatProvider] Audio send error: $e');
@@ -285,6 +300,7 @@ class ChatProvider extends ChangeNotifier {
   @override
   void dispose() {
     close();
+    _audioService.dispose();
     super.dispose();
   }
 }

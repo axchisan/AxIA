@@ -10,6 +10,7 @@ class AppColors {
   static const Color neonPurple = Color(0xFFBB86FC); // Neon Purple
   static const Color neonCyan = Color(0xFF00D9FF); // Neon Cyan
   static const Color neonMagenta = Color(0xFFFF006E); // Neon Magenta
+  static const Color neonPink = Color(0xFFFE347E);
   
   // Background Colors - Dark Theme
   static const Color bgDarkPrimary = Color(0xFF0F0F1E); // Almost Black

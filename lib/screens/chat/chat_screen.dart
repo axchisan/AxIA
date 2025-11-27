@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import '../../config/theme/app_colors.dart';
 import '../../config/theme/app_typography.dart';
 import '../../providers/chat_provider.dart';
@@ -15,7 +17,9 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  // ignore: unused_field
   bool _isTyping = false;
+  bool _isRecording = false;
   late List<AnimationController> _dotAnimations;
 
   @override
@@ -63,7 +67,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   padding: const EdgeInsets.all(12),
                   child: Row(
                     children: [
-                      Icon(Icons.error_outline, color: Colors.red),
+                      const Icon(Icons.error_outline, color: Colors.red),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -97,8 +101,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             builder: (context, chatProvider, _) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (_scrollController.hasClients) {
-                  _scrollController.jumpTo(
+                  _scrollController.animateTo(
                     _scrollController.position.maxScrollExtent,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
                   );
                 }
               });
@@ -109,12 +115,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   horizontal: 16,
                   vertical: 20,
                 ),
-                itemCount: chatProvider.messages.length + (_isTyping ? 1 : 0),
+                itemCount: chatProvider.messages.length,
                 itemBuilder: (context, index) {
-                  if (index == chatProvider.messages.length && _isTyping) {
-                    return _buildTypingIndicator();
-                  }
-
                   final message = chatProvider.messages[index];
                   final isUserMessage = message.sender.name == 'user';
 
@@ -137,50 +139,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildTypingIndicator() {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: GlassCard(
-        backgroundColor: AppColors.bgDarkCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.neonPurple.withOpacity(0.2),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildDot(0),
-            const SizedBox(width: 4),
-            _buildDot(1),
-            const SizedBox(width: 4),
-            _buildDot(2),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDot(int index) {
-    return AnimatedBuilder(
-      animation: _dotAnimations[index],
-      builder: (context, child) {
-        final value = _dotAnimations[index].value;
-        return Transform.translate(
-          offset: Offset(0, -(value * 8)),
-          child: Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.neonPurple,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildInputArea(ChatProvider chatProvider) {
     final bool hasText = _messageController.text.isNotEmpty;
     
@@ -196,55 +154,39 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => _showInputOptions(),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.bgDarkCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppColors.neonPurple.withOpacity(0.2),
-                ),
-              ),
-              child: Icon(
-                Icons.add_rounded,
-                color: AppColors.neonPurple,
-                size: 24,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
           Expanded(
             child: TextField(
               controller: _messageController,
               onChanged: (value) {
-                setState(() => _isTyping = value.isNotEmpty);
+                setState(() {
+                  _isTyping = value.isNotEmpty;
+                });
               },
               style: AppTypography.body2.copyWith(
                 color: AppColors.textDarkPrimary,
               ),
               maxLines: null,
+              textInputAction: TextInputAction.newline,
               decoration: InputDecoration(
                 hintText: 'Escribe tu mensaje...',
                 hintStyle: AppTypography.body2.copyWith(
                   color: AppColors.textDarkTertiary,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide(
                     color: AppColors.neonPurple.withOpacity(0.3),
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(24),
                   borderSide: const BorderSide(
                     color: AppColors.neonPurple,
                     width: 2,
                   ),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
+                  horizontal: 20,
                   vertical: 12,
                 ),
               ),
@@ -255,43 +197,62 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             GestureDetector(
               onTap: chatProvider.isConnected
                   ? () {
-                      chatProvider.sendMessage(_messageController.text);
-                      _messageController.clear();
-                      setState(() => _isTyping = false);
+                      final text = _messageController.text.trim();
+                      if (text.isNotEmpty) {
+                        chatProvider.sendMessage(text);
+                        _messageController.clear();
+                        setState(() => _isTyping = false);
+                      }
                     }
                   : null,
               child: Container(
-                padding: const EdgeInsets.all(12),
+                width: 56,
+                height: 56,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: chatProvider.isConnected
                         ? AppColors.neonGradient
                         : [Colors.grey, Colors.grey],
                   ),
-                  borderRadius: BorderRadius.circular(12),
+                  shape: BoxShape.circle,
                 ),
                 child: Icon(
                   Icons.send_rounded,
-                  color: chatProvider.isConnected ? Colors.white : Colors.grey,
+                  color: chatProvider.isConnected ? Colors.white : Colors.grey.shade400,
                   size: 24,
                 ),
               ),
             )
           else
             GestureDetector(
-              onTap: () => _sendVoiceMessage(),
-              child: Container(
-                padding: const EdgeInsets.all(12),
+              onLongPressStart: (_) => _startVoiceRecording(chatProvider),
+              onLongPressEnd: (_) => _stopVoiceRecording(chatProvider),
+              onLongPressCancel: () => _cancelVoiceRecording(chatProvider),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 56,
+                height: 56,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: AppColors.neonGradient,
+                    colors: _isRecording 
+                        ? [Colors.red, Colors.red.shade700]
+                        : AppColors.neonGradient,
                   ),
-                  borderRadius: BorderRadius.circular(12),
+                  shape: BoxShape.circle,
+                  boxShadow: _isRecording
+                      ? [
+                          BoxShadow(
+                            color: Colors.red.withOpacity(0.5),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Icon(
-                  Icons.mic_rounded,
+                  _isRecording ? Icons.stop_rounded : Icons.mic_rounded,
                   color: Colors.white,
-                  size: 24,
+                  size: 28,
                 ),
               ),
             ),
@@ -300,103 +261,44 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _showInputOptions() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.bgDarkSecondary,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildOptionTile(
-              icon: Icons.mic_rounded,
-              label: 'Mensaje de Voz',
-              onTap: () {
-                Navigator.pop(context);
-                _sendVoiceMessage();
-              },
-            ),
-            _buildOptionTile(
-              icon: Icons.image_rounded,
-              label: 'Imagen',
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-            _buildOptionTile(
-              icon: Icons.schedule_rounded,
-              label: 'Agendar',
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
+  Future<void> _startVoiceRecording(ChatProvider chatProvider) async {
+    final success = await chatProvider.audioService.startRecording();
+    if (success) {
+      setState(() => _isRecording = true);
+      HapticFeedback.mediumImpact();
+    } else {
+      _showSnackbar('No se pudo acceder al micrófono');
+    }
   }
 
-  Widget _buildOptionTile({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: AppColors.neonPurple),
-      title: Text(
-        label,
-        style: AppTypography.body2.copyWith(
-          color: AppColors.textDarkPrimary,
-        ),
-      ),
-      onTap: onTap,
-    );
+  Future<void> _stopVoiceRecording(ChatProvider chatProvider) async {
+    if (!_isRecording) return;
+    
+    setState(() => _isRecording = false);
+    HapticFeedback.lightImpact();
+    
+    final audioBase64 = await chatProvider.audioService.stopRecordingAndGetBase64();
+    if (audioBase64 != null) {
+      await chatProvider.sendAudioMessage(audioBase64);
+    } else {
+      _showSnackbar('Error al procesar el audio');
+    }
   }
 
-  void _sendVoiceMessage() {
-    // TODO: Implement actual voice recording
-    context.read<ChatProvider>().sendMessage('🎤 Mensaje de voz (próximamente)');
+  Future<void> _cancelVoiceRecording(ChatProvider chatProvider) async {
+    if (!_isRecording) return;
+    
+    setState(() => _isRecording = false);
+    await chatProvider.audioService.cancelRecording();
+    _showSnackbar('Grabación cancelada');
   }
 
-  void _showMessageOptions(dynamic message) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.bgDarkSecondary,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildOptionTile(
-              icon: Icons.copy_rounded,
-              label: 'Copiar',
-              onTap: () => Navigator.pop(context),
-            ),
-            _buildOptionTile(
-              icon: Icons.delete_rounded,
-              label: 'Eliminar',
-              onTap: () => Navigator.pop(context),
-            ),
-            _buildOptionTile(
-              icon: Icons.star_rounded,
-              label: 'Marcar',
-              onTap: () => Navigator.pop(context),
-            ),
-          ],
-        ),
+  void _showSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        backgroundColor: AppColors.bgDarkCard,
       ),
     );
   }
@@ -445,14 +347,64 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.call_rounded),
-          onPressed: () {},
-        ),
-        IconButton(
           icon: const Icon(Icons.more_vert_rounded),
-          onPressed: () {},
+          onPressed: () => _showChatOptions(),
         ),
       ],
+    );
+  }
+
+  void _showChatOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgDarkSecondary,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildOptionTile(
+              icon: Icons.delete_sweep_rounded,
+              label: 'Limpiar chat',
+              onTap: () {
+                Navigator.pop(context);
+                context.read<ChatProvider>().clearMessages();
+              },
+            ),
+            _buildOptionTile(
+              icon: Icons.refresh_rounded,
+              label: 'Reconectar',
+              onTap: () {
+                Navigator.pop(context);
+                context.read<ChatProvider>().reconnect();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOptionTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: AppColors.neonPurple),
+      title: Text(
+        label,
+        style: AppTypography.body2.copyWith(
+          color: AppColors.textDarkPrimary,
+        ),
+      ),
+      onTap: onTap,
     );
   }
 
@@ -490,28 +442,62 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       color: isUserMessage ? Colors.white : AppColors.neonPurple,
                     ),
                     const SizedBox(width: 8),
-                    Container(
-                      width: 120,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: isUserMessage
-                            ? Colors.white.withOpacity(0.3)
-                            : AppColors.neonPurple.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(2),
+                    Expanded(
+                      child: Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: isUserMessage
+                              ? Colors.white.withOpacity(0.3)
+                              : AppColors.neonPurple.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
               ],
-              Text(
-                message.content,
-                style: AppTypography.body2.copyWith(
-                  color: isUserMessage
-                      ? Colors.white
-                      : AppColors.textDarkPrimary,
+              if (isUserMessage)
+                Text(
+                  message.content,
+                  style: AppTypography.body2.copyWith(
+                    color: Colors.white,
+                  ),
+                )
+              else
+                MarkdownBody(
+                  data: message.content,
+                  styleSheet: MarkdownStyleSheet(
+                    p: AppTypography.body2.copyWith(
+                      color: AppColors.textDarkPrimary,
+                    ),
+                    h1: AppTypography.h3.copyWith(
+                      color: AppColors.neonPurple,
+                    ),
+                    h2: AppTypography.h4.copyWith(
+                      color: AppColors.neonPurple,
+                    ),
+                    h3: AppTypography.h5.copyWith(
+                      color: AppColors.neonCyan,
+                    ),
+                    strong: AppTypography.body2.copyWith(
+                      color: AppColors.textDarkPrimary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    em: AppTypography.body2.copyWith(
+                      color: AppColors.textDarkSecondary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    code: AppTypography.body2.copyWith(
+                      color: AppColors.neonPink,
+                      fontFamily: 'monospace',
+                      backgroundColor: AppColors.bgDarkSecondary,
+                    ),
+                    listBullet: AppTypography.body2.copyWith(
+                      color: AppColors.neonPurple,
+                    ),
+                  ),
                 ),
-              ),
               const SizedBox(height: 4),
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -537,6 +523,36 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showMessageOptions(dynamic message) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgDarkSecondary,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildOptionTile(
+              icon: Icons.copy_rounded,
+              label: 'Copiar',
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: message.content));
+                Navigator.pop(context);
+                _showSnackbar('Mensaje copiado');
+              },
+            ),
+          ],
         ),
       ),
     );

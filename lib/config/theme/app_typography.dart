@@ -22,6 +22,21 @@ class AppTypography {
     fontWeight: FontWeight.w600,
     height: 1.3,
   );
+  static const TextStyle h4 = TextStyle(
+    fontFamily: 'SpaceGrotesk',
+    fontSize: 20,
+    fontWeight: FontWeight.w600,
+    height: 1.4,
+    letterSpacing: 0.15,
+  );
+
+  static const TextStyle h5 = TextStyle(
+    fontFamily: 'SpaceGrotesk',
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    height: 1.4,
+    letterSpacing: 0.1,
+  );
 
   // Body Text
   static const TextStyle body1 = TextStyle(

@@ -10,6 +10,7 @@ class ChatMessage {
   final DateTime timestamp;
   final bool isVoice;
   final String? audioUrl;
+  final String? audioBase64;
 
   ChatMessage({
     required this.id,
@@ -18,6 +19,7 @@ class ChatMessage {
     required this.timestamp,
     this.isVoice = false,
     this.audioUrl,
+    this.audioBase64,
   });
 
   Map<String, dynamic> toJson() {
@@ -28,6 +30,7 @@ class ChatMessage {
       'timestamp': timestamp.toIso8601String(),
       'isVoice': isVoice,
       'audioUrl': audioUrl,
+      'audioBase64': audioBase64,
     };
   }
 
@@ -39,6 +42,7 @@ class ChatMessage {
       timestamp: DateTime.parse(json['timestamp'] as String),
       isVoice: json['isVoice'] as bool? ?? false,
       audioUrl: json['audioUrl'] as String?,
+      audioBase64: json['audioBase64'] as String?,
     );
   }
 }
