@@ -137,6 +137,270 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildTypingIndicator() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GlassCard(
+        backgroundColor: AppColors.bgDarkCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.neonPurple.withOpacity(0.2),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildDot(0),
+            const SizedBox(width: 4),
+            _buildDot(1),
+            const SizedBox(width: 4),
+            _buildDot(2),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDot(int index) {
+    return AnimatedBuilder(
+      animation: _dotAnimations[index],
+      builder: (context, child) {
+        final value = _dotAnimations[index].value;
+        return Transform.translate(
+          offset: Offset(0, -(value * 8)),
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.neonPurple,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInputArea(ChatProvider chatProvider) {
+    final bool hasText = _messageController.text.isNotEmpty;
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.bgDarkSecondary,
+        border: Border(
+          top: BorderSide(
+            color: AppColors.neonPurple.withOpacity(0.1),
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => _showInputOptions(),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.bgDarkCard,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.neonPurple.withOpacity(0.2),
+                ),
+              ),
+              child: Icon(
+                Icons.add_rounded,
+                color: AppColors.neonPurple,
+                size: 24,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              onChanged: (value) {
+                setState(() => _isTyping = value.isNotEmpty);
+              },
+              style: AppTypography.body2.copyWith(
+                color: AppColors.textDarkPrimary,
+              ),
+              maxLines: null,
+              decoration: InputDecoration(
+                hintText: 'Escribe tu mensaje...',
+                hintStyle: AppTypography.body2.copyWith(
+                  color: AppColors.textDarkTertiary,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: AppColors.neonPurple.withOpacity(0.3),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: AppColors.neonPurple,
+                    width: 2,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (hasText)
+            GestureDetector(
+              onTap: chatProvider.isConnected
+                  ? () {
+                      chatProvider.sendMessage(_messageController.text);
+                      _messageController.clear();
+                      setState(() => _isTyping = false);
+                    }
+                  : null,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: chatProvider.isConnected
+                        ? AppColors.neonGradient
+                        : [Colors.grey, Colors.grey],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.send_rounded,
+                  color: chatProvider.isConnected ? Colors.white : Colors.grey,
+                  size: 24,
+                ),
+              ),
+            )
+          else
+            GestureDetector(
+              onTap: () => _sendVoiceMessage(),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: AppColors.neonGradient,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.mic_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showInputOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgDarkSecondary,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildOptionTile(
+              icon: Icons.mic_rounded,
+              label: 'Mensaje de Voz',
+              onTap: () {
+                Navigator.pop(context);
+                _sendVoiceMessage();
+              },
+            ),
+            _buildOptionTile(
+              icon: Icons.image_rounded,
+              label: 'Imagen',
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+            _buildOptionTile(
+              icon: Icons.schedule_rounded,
+              label: 'Agendar',
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOptionTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: AppColors.neonPurple),
+      title: Text(
+        label,
+        style: AppTypography.body2.copyWith(
+          color: AppColors.textDarkPrimary,
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
+
+  void _sendVoiceMessage() {
+    // TODO: Implement actual voice recording
+    context.read<ChatProvider>().sendMessage('🎤 Mensaje de voz (próximamente)');
+  }
+
+  void _showMessageOptions(dynamic message) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgDarkSecondary,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildOptionTile(
+              icon: Icons.copy_rounded,
+              label: 'Copiar',
+              onTap: () => Navigator.pop(context),
+            ),
+            _buildOptionTile(
+              icon: Icons.delete_rounded,
+              label: 'Eliminar',
+              onTap: () => Navigator.pop(context),
+            ),
+            _buildOptionTile(
+              icon: Icons.star_rounded,
+              label: 'Marcar',
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       title: Row(
@@ -273,246 +537,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTypingIndicator() {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: GlassCard(
-        backgroundColor: AppColors.bgDarkCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.neonPurple.withOpacity(0.2),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildDot(0),
-            const SizedBox(width: 4),
-            _buildDot(1),
-            const SizedBox(width: 4),
-            _buildDot(2),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDot(int index) {
-    return AnimatedBuilder(
-      animation: _dotAnimations[index],
-      builder: (context, child) {
-        final value = _dotAnimations[index].value;
-        return Transform.translate(
-          offset: Offset(0, -(value * 8)),
-          child: Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.neonPurple,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildInputArea(ChatProvider chatProvider) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.bgDarkSecondary,
-        border: Border(
-          top: BorderSide(
-            color: AppColors.neonPurple.withOpacity(0.1),
-          ),
-        ),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => _showInputOptions(),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.bgDarkCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppColors.neonPurple.withOpacity(0.2),
-                ),
-              ),
-              child: Icon(
-                Icons.add_rounded,
-                color: AppColors.neonPurple,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              onChanged: (value) {
-                setState(() => _isTyping = value.isNotEmpty);
-              },
-              style: AppTypography.body2.copyWith(
-                color: AppColors.textDarkPrimary,
-              ),
-              maxLines: null,
-              decoration: InputDecoration(
-                hintText: 'Escribe tu mensaje...',
-                hintStyle: AppTypography.body2.copyWith(
-                  color: AppColors.textDarkTertiary,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: AppColors.neonPurple.withOpacity(0.3),
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: AppColors.neonPurple,
-                    width: 2,
-                  ),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          GestureDetector(
-            onTap: chatProvider.isConnected && _messageController.text.isNotEmpty
-                ? () {
-                    chatProvider.sendMessage(_messageController.text);
-                    _messageController.clear();
-                    setState(() => _isTyping = false);
-                  }
-                : null,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: chatProvider.isConnected
-                      ? AppColors.neonGradient
-                      : [Colors.grey, Colors.grey],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.send_rounded,
-                color: chatProvider.isConnected ? Colors.white : Colors.grey,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showInputOptions() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.bgDarkSecondary,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildOptionTile(
-              icon: Icons.mic_rounded,
-              label: 'Mensaje de Voz',
-              onTap: () {
-                Navigator.pop(context);
-                _sendVoiceMessage();
-              },
-            ),
-            _buildOptionTile(
-              icon: Icons.image_rounded,
-              label: 'Imagen',
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-            _buildOptionTile(
-              icon: Icons.schedule_rounded,
-              label: 'Agendar',
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOptionTile({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: AppColors.neonPurple),
-      title: Text(
-        label,
-        style: AppTypography.body2.copyWith(
-          color: AppColors.textDarkPrimary,
-        ),
-      ),
-      onTap: onTap,
-    );
-  }
-
-  void _sendVoiceMessage() {
-    context.read<ChatProvider>().sendMessage('🎤 Mensaje de voz (simulado)');
-  }
-
-  void _showMessageOptions(dynamic message) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.bgDarkSecondary,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildOptionTile(
-              icon: Icons.copy_rounded,
-              label: 'Copiar',
-              onTap: () => Navigator.pop(context),
-            ),
-            _buildOptionTile(
-              icon: Icons.delete_rounded,
-              label: 'Eliminar',
-              onTap: () => Navigator.pop(context),
-            ),
-            _buildOptionTile(
-              icon: Icons.star_rounded,
-              label: 'Marcar',
-              onTap: () => Navigator.pop(context),
-            ),
-          ],
         ),
       ),
     );
