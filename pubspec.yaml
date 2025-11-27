@@ -1,5 +1,5 @@
 name: axia
-description: "AxIA - Personal Life & Work Control Center"
+description: "AxIA - App personal AI assistant"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,30 +9,36 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
   # State Management & Architecture
   provider: ^6.1.2
   riverpod: ^3.0.3
   flutter_riverpod: ^3.0.3
+
   # UI & Design
   google_fonts: ^6.3.2
   flutter_animate: ^4.5.2
   shimmer: ^3.0.0
   smooth_page_indicator: ^1.2.1
+
   # Chat & Messaging
   intl: ^0.20.2
   web_socket_channel: ^2.4.0
+
   # Voice & Audio
   speech_to_text: ^7.3.0
   flutter_tts: ^4.2.3
   permission_handler: ^12.0.1
+
   # Local Storage
   shared_preferences: ^2.5.3
   hive: ^2.2.3
   hive_flutter: ^1.1.0
-  # Networking (usa Dio manual por ahora; agrega Retrofit después si lo necesitas)
+
+  # Networking
   dio: ^5.9.0
-  # Time & Date (intl ya está arriba)
-  # Icons
+
+  # Icons & Media
   material_design_icons_flutter: ^7.0.7296
   flutter_sound: ^9.29.14
   flutter_secure_storage: ^9.2.2
@@ -48,14 +54,22 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.4.13
   hive_generator: ^2.0.1
+  flutter_launcher_icons: ^0.14.4  
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
 
 flutter:
   uses-material-design: true
+
   assets:
     - assets/images/
     - assets/animations/
     - assets/sounds/
     - assets/fonts/
+
   fonts:
     - family: SpaceGrotesk
       fonts:
